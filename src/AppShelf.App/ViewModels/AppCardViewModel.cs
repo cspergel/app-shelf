@@ -39,7 +39,8 @@ public sealed class AppCardViewModel : ObservableObject
         ToggleFavoriteCommand = new RelayCommand(ToggleFavorite);
         ToggleLogsCommand = new RelayCommand(() => ShowLogs = !ShowLogs);
 
-        RefreshStatus();
+        // Initial status is Stopped (the enum default); the owner kicks off an async poll right
+        // after building the cards, so we never block the UI thread probing ports during load.
     }
 
     public AppEntry Entry { get; }
@@ -126,10 +127,21 @@ public sealed class AppCardViewModel : ObservableObject
         OnPropertyChanged(nameof(IsFavorite));
     }
 
-    /// <summary>Re-reads live status (and logs, when the panel is open). Called on a timer.</summary>
+    /// <summary>Re-reads live status (and logs, when the panel is open). Synchronous — used by
+    /// one-off, user-initiated actions (Open/Stop). The periodic poll uses <see cref="ApplyStatus"/>
+    /// with a status computed off the UI thread (see <c>MainViewModel.RefreshStatuses</c>).</summary>
     public void RefreshStatus()
     {
         Status = _service.StatusOf(Entry);
+        if (ShowLogs)
+            RefreshLogs();
+    }
+
+    /// <summary>Apply an already-computed status (from the background poll) on the UI thread,
+    /// refreshing the log tail if the panel is open.</summary>
+    public void ApplyStatus(LaunchStatus status)
+    {
+        Status = status;
         if (ShowLogs)
             RefreshLogs();
     }

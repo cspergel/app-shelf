@@ -102,6 +102,10 @@ public sealed class GroupCardViewModel : ObservableObject
         RecomputePill();
     }
 
+    /// <summary>Recompute the aggregate pill from members' already-updated statuses, without
+    /// probing ports. Called by the background poll after it has applied member statuses.</summary>
+    public void RecomputeAggregate() => RecomputePill();
+
     private void RecomputePill() =>
         StatusPill = GroupStatusCalculator.Aggregate(Members.Select(m => m.Status));
 

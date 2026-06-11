@@ -88,17 +88,44 @@ public sealed class MainViewModel : ObservableObject
             card.ShowLogs = openLogIds.Contains(card.Entry.Id);
 
         ApplyFilter();
+        RefreshStatuses(); // populate live status off the UI thread (no blocking probe during load)
     }
 
     private AppCardViewModel MakeCard(AppEntry entry) =>
         new(entry, _service, OnEdit, OnRemove, OnFavoriteToggled);
 
-    public void RefreshStatuses()
+    private bool _refreshing;
+
+    /// <summary>Poll live status for every card OFF the UI thread — the port probes do blocking
+    /// TCP connects, and running them on the dispatcher (the old behavior) froze the UI on every
+    /// 2-second tick. Compute statuses in parallel on the thread pool, then apply them and
+    /// recompute group pills back on the UI thread. A re-entrancy guard skips a tick if the
+    /// previous probe round is still in flight (e.g. a slow/firewalled URL).</summary>
+    public async void RefreshStatuses()
     {
-        foreach (var group in _groups)
-            group.RefreshStatuses();
-        foreach (var card in _standalones)
-            card.RefreshStatus();
+        if (_refreshing)
+            return;
+        _refreshing = true;
+        try
+        {
+            var cards = _standalones.Concat(_groups.SelectMany(g => g.Members)).ToList();
+            if (cards.Count == 0)
+                return;
+
+            var entries = cards.Select(c => c.Entry).ToList();
+            var statuses = await Task.Run(() =>
+                entries.AsParallel().AsOrdered().Select(e => _service.StatusOf(e)).ToList());
+
+            for (int i = 0; i < cards.Count; i++)
+                cards[i].ApplyStatus(statuses[i]);
+
+            foreach (var group in _groups)
+                group.RecomputeAggregate();
+        }
+        finally
+        {
+            _refreshing = false;
+        }
     }
 
     private void ApplyFilter()
