@@ -11,8 +11,9 @@ own local apps*.
 
 > Personal cockpit, not a product: single-user, Windows-first, optimized for convenience.
 
-<!-- TODO: add a screenshot / GIF of the card grid here — it's the #1 thing that sells this.
-     e.g. ![AppShelf card grid](docs/images/card-grid.png) -->
+<p align="center">
+  <img src="docs/images/card-grid.png" alt="AppShelf card grid — a running project group, a favorited running app, and stopped apps ready to launch" width="840">
+</p>
 
 ---
 
@@ -43,6 +44,18 @@ of that from one window — and, crucially, **stops cleanly**: it kills the whol
   confirm/edit — it never guesses silently.
 - **Hand-editable JSON config** at `%APPDATA%/AppShelf/config.json`. No database, no migrations,
   git-versionable.
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/images/expanded-grid.png" alt="A project group expanded into its backend and frontend member cards" width="840">
+</p>
+<p align="center"><i>Group a backend + frontend into one card — expand to control each service individually.</i></p>
+
+<p align="center">
+  <img src="docs/images/port-doctor.png" alt="Port Doctor listing live dev-server ports classified by ownership" width="840">
+</p>
+<p align="center"><i>Port Doctor: see what's on every dev port, classified by ownership — and kill the zombies.</i></p>
 
 ## Requirements
 
