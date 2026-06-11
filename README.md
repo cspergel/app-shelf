@@ -1,4 +1,8 @@
-# AppShelf
+<p align="center">
+  <img src="docs/images/icon.png" alt="AppShelf logo" width="128" height="128">
+</p>
+
+<h1 align="center">AppShelf</h1>
 
 **Stop typing `npm run dev` every morning.** AppShelf is a personal, one-click launcher for
 your local web/prototype projects on Windows — register a project once, then start its dev
