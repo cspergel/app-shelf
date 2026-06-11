@@ -1,0 +1,137 @@
+<Window x:Class="AppShelf.App.Dialogs.AppEditWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Add app" Height="600" Width="520"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource SurfaceWindow}" Foreground="{StaticResource TextPrimary}"
+        FontFamily="{StaticResource AppFont}" FontSize="13"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display">
+
+    <Window.Resources>
+        <Style TargetType="TextBox" BasedOn="{StaticResource InputBox}">
+            <Setter Property="Margin" Value="0,0,0,8"/>
+        </Style>
+        <Style TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,0,0,3"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
+        </Style>
+        <Style TargetType="ComboBox">
+            <Setter Property="Margin" Value="0,0,0,8"/>
+            <Setter Property="Padding" Value="6,4"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Scrollable form so nothing clips on small screens -->
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Padding="0,0,8,0">
+            <StackPanel>
+                <TextBlock Text="Mode"/>
+                <ComboBox x:Name="ModeCombo" SelectionChanged="ModeCombo_OnSelectionChanged">
+                    <ComboBoxItem Content="Local folder" IsSelected="True"/>
+                    <ComboBoxItem Content="Web URL"/>
+                    <ComboBoxItem Content="Manual command"/>
+                </ComboBox>
+
+                <TextBlock Text="Name"/>
+                <TextBox x:Name="NameBox"/>
+
+                <StackPanel x:Name="DirPanel">
+                    <TextBlock Text="Folder"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="DirBox" Grid.Column="0"/>
+                        <Button x:Name="BrowseButton" Grid.Column="1" Content="Browse…" Style="{StaticResource GhostButton}"
+                                Click="BrowseButton_OnClick" Margin="6,0,0,8"/>
+                        <Button x:Name="DetectButton" Grid.Column="2" Content="Detect" Style="{StaticResource GhostButton}"
+                                Click="DetectButton_OnClick" Margin="6,0,0,8"/>
+                    </Grid>
+                </StackPanel>
+
+                <StackPanel x:Name="CmdPanel">
+                    <TextBlock Text="Command"/>
+                    <TextBox x:Name="CmdBox"/>
+                </StackPanel>
+
+                <TextBlock Text="URL"/>
+                <TextBox x:Name="UrlBox"/>
+
+                <StackPanel x:Name="InstallPanel">
+                    <TextBlock Text="Install command (optional)"/>
+                    <TextBox x:Name="InstallBox"/>
+                </StackPanel>
+
+                <TextBlock Text="Tags (comma-separated)"/>
+                <TextBox x:Name="TagsBox"/>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                        <TextBlock Text="Group (optional — apps sharing a name show as one card)"/>
+                        <TextBox x:Name="GroupBox"/>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock Text="Role"/>
+                        <ComboBox x:Name="RoleCombo" Width="120">
+                            <ComboBoxItem Content="other" IsSelected="True"/>
+                            <ComboBoxItem Content="backend"/>
+                            <ComboBoxItem Content="frontend"/>
+                        </ComboBox>
+                    </StackPanel>
+                </Grid>
+
+                <Grid x:Name="PortPanel">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Port (blank = auto-assign a free port)"/>
+                        <TextBox x:Name="PortBox"/>
+                    </StackPanel>
+                    <CheckBox x:Name="FixedCheck" Grid.Column="1" Content="Pin (fixed)" Foreground="{StaticResource TextPrimary}"
+                              VerticalAlignment="Center" Margin="12,8,0,0"/>
+                </Grid>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Open target"/>
+                        <ComboBox x:Name="OpenCombo">
+                            <ComboBoxItem Content="browser" IsSelected="True"/>
+                            <ComboBoxItem Content="webview (coming soon)" IsEnabled="False"/>
+                        </ComboBox>
+                    </StackPanel>
+                    <CheckBox x:Name="FavoriteCheck" Grid.Column="1" Content="★ Favorite" Foreground="{StaticResource TextPrimary}"
+                              VerticalAlignment="Center" Margin="12,8,0,0"/>
+                </Grid>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Pinned status line (always visible) -->
+        <TextBlock x:Name="ErrorText" Grid.Row="1" Foreground="{StaticResource StatusStarting}" TextWrapping="Wrap" Margin="0,8,0,0"/>
+
+        <!-- Pinned buttons -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Content="Cancel" Click="CancelButton_OnClick" Style="{StaticResource GhostButton}"/>
+            <Button x:Name="OkButton" Content="Save" Click="OkButton_OnClick" Style="{StaticResource PrimaryButton}" Margin="0"/>
+        </StackPanel>
+    </Grid>
+</Window>

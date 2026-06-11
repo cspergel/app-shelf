@@ -1,0 +1,19 @@
+# Normalize line endings: Git stores LF, checks out native on Windows.
+* text=auto
+
+# Explicitly text
+*.cs    text
+*.xaml  text
+*.csproj text
+*.sln   text eol=crlf
+*.props text
+*.md    text
+*.json  text
+*.yml   text
+
+# Binary
+*.png   binary
+*.gif   binary
+*.jpg   binary
+*.ico   binary
+*.exe   binary

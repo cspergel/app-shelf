@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\AppShelf.Core\AppShelf.Core.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>appshelf</AssemblyName>
+    <RootNamespace>AppShelf.Cli</RootNamespace>
+    <!-- Single-file publish: dotnet publish -c Release -r win-x64 -p:PublishSingleFile=true (self-contained false) -->
+    <RuntimeIdentifier Condition="'$(PublishSingleFile)' == 'true'">win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+</Project>

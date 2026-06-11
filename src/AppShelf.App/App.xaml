@@ -1,0 +1,17 @@
+<Application x:Class="AppShelf.App.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:AppShelf.App"
+             ShutdownMode="OnExplicitShutdown">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/AppShelf.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+            <local:StatusToBrushConverter x:Key="StatusToBrush"/>
+            <local:GroupStatusToBrushConverter x:Key="GroupStatusToBrush"/>
+            <local:BoolToVisibilityConverter x:Key="BoolToVis"/>
+            <local:StringToVisibilityConverter x:Key="StringToVis"/>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

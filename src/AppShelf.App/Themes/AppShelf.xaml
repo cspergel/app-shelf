@@ -1,0 +1,212 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                    xmlns:po="http://schemas.microsoft.com/winfx/2006/xaml/presentation/options"
+                    mc:Ignorable="po">
+
+    <!-- ============ Color tokens ============ -->
+    <Color x:Key="ColorSurfaceWindow">#17181C</Color>
+    <Color x:Key="ColorSurfaceCard">#1F2127</Color>
+    <Color x:Key="ColorSurfaceCardHover">#23262D</Color>
+    <Color x:Key="ColorSurfaceElevated">#262932</Color>
+    <Color x:Key="ColorAccent">#7C6AEF</Color>
+    <Color x:Key="ColorAccentHover">#8F7FF5</Color>
+    <Color x:Key="ColorRunning">#34C98E</Color>
+    <Color x:Key="ColorStarting">#E5A84B</Color>
+    <Color x:Key="ColorStopped">#565B66</Color>
+    <Color x:Key="ColorError">#E5645A</Color>
+
+    <!-- po:Freeze: frozen brushes/effects skip change-notification bookkeeping and are shareable
+         with the render thread — cheaper to use everywhere, especially under animation. -->
+    <SolidColorBrush x:Key="SurfaceWindow" Color="{StaticResource ColorSurfaceWindow}" po:Freeze="True"/>
+    <SolidColorBrush x:Key="SurfaceCard" Color="{StaticResource ColorSurfaceCard}" po:Freeze="True"/>
+    <SolidColorBrush x:Key="SurfaceCardHover" Color="{StaticResource ColorSurfaceCardHover}" po:Freeze="True"/>
+    <SolidColorBrush x:Key="SurfaceElevated" Color="{StaticResource ColorSurfaceElevated}" po:Freeze="True"/>
+    <SolidColorBrush x:Key="BorderHairline" Color="#FFFFFF" Opacity="0.08" po:Freeze="True"/>
+    <SolidColorBrush x:Key="TextPrimary" Color="#E8EAED" po:Freeze="True"/>
+    <SolidColorBrush x:Key="TextSecondary" Color="#9BA1AB" po:Freeze="True"/>
+    <SolidColorBrush x:Key="TextFaint" Color="#6B717C" po:Freeze="True"/>
+    <SolidColorBrush x:Key="Accent" Color="{StaticResource ColorAccent}" po:Freeze="True"/>
+    <SolidColorBrush x:Key="AccentHover" Color="{StaticResource ColorAccentHover}" po:Freeze="True"/>
+    <SolidColorBrush x:Key="AccentMuted" Color="{StaticResource ColorAccent}" Opacity="0.15" po:Freeze="True"/>
+    <SolidColorBrush x:Key="StatusRunning" Color="{StaticResource ColorRunning}" po:Freeze="True"/>
+    <SolidColorBrush x:Key="StatusStarting" Color="{StaticResource ColorStarting}" po:Freeze="True"/>
+    <SolidColorBrush x:Key="StatusStopped" Color="{StaticResource ColorStopped}" po:Freeze="True"/>
+    <SolidColorBrush x:Key="StatusError" Color="{StaticResource ColorError}" po:Freeze="True"/>
+
+    <FontFamily x:Key="AppFont">Segoe UI Variable, Segoe UI</FontFamily>
+    <FontFamily x:Key="MonoFont">Consolas</FontFamily>
+
+    <Duration x:Key="MotionFast">0:0:0.15</Duration>
+
+    <!-- ============ Card shadow ============ -->
+    <!-- Frozen: these are applied to static shadow underlays that never re-render, and never
+         swapped per-state (hover cross-fades the underlay's Opacity instead). Hover blur kept
+         at the top of the design range (12-16px) — larger radii cost real GPU per pixel. -->
+    <DropShadowEffect x:Key="CardShadow" Color="#000000" Opacity="0.30" BlurRadius="14"
+                      ShadowDepth="2" Direction="270" po:Freeze="True"/>
+    <DropShadowEffect x:Key="CardShadowHover" Color="#000000" Opacity="0.45" BlurRadius="16"
+                      ShadowDepth="3" Direction="270" po:Freeze="True"/>
+
+    <!-- ============ Buttons ============ -->
+    <Style x:Key="ButtonBase" TargetType="Button">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="12,6"/>
+        <Setter Property="Margin" Value="0,0,6,0"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bg" Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="6" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bg" Property="Opacity" Value="0.7"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Bg" Property="Opacity" Value="0.4"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Violet primary -->
+    <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource ButtonBase}">
+        <Setter Property="Background" Value="{StaticResource Accent}"/>
+        <Setter Property="Foreground" Value="White"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{StaticResource AccentHover}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- Quiet ghost: transparent until hover -->
+    <Style x:Key="GhostButton" TargetType="Button" BasedOn="{StaticResource ButtonBase}">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderHairline}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{StaticResource SurfaceElevated}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- Red ghost for destructive actions -->
+    <Style x:Key="DangerGhostButton" TargetType="Button" BasedOn="{StaticResource GhostButton}">
+        <Setter Property="Foreground" Value="{StaticResource StatusError}"/>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="#33E5645A"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- ============ Chips ============ -->
+    <!-- Outline chip (type badge, member count) -->
+    <Style x:Key="ChipBorder" TargetType="Border">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderHairline}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="4"/>
+        <Setter Property="Padding" Value="6,2"/>
+    </Style>
+    <Style x:Key="ChipText" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="11"/>
+        <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
+    </Style>
+    <!-- Violet-tinted tag chip -->
+    <Style x:Key="TagChipBorder" TargetType="Border" BasedOn="{StaticResource ChipBorder}">
+        <Setter Property="Background" Value="{StaticResource AccentMuted}"/>
+        <Setter Property="BorderThickness" Value="0"/>
+    </Style>
+
+    <!-- ============ Inputs ============ -->
+    <Style x:Key="InputBox" TargetType="TextBox">
+        <Setter Property="Background" Value="{StaticResource SurfaceElevated}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderHairline}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="8,6"/>
+        <Setter Property="CaretBrush" Value="{StaticResource TextPrimary}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TextBox">
+                    <Border x:Name="Bg" Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                        <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource Accent}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Form label -->
+    <Style x:Key="FieldLabel" TargetType="TextBlock">
+        <Setter Property="Margin" Value="0,0,0,3"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
+    </Style>
+
+    <!-- ============ Context menu (elevated, rounded) ============ -->
+    <Style x:Key="CardMenu" TargetType="ContextMenu">
+        <Setter Property="Background" Value="{StaticResource SurfaceElevated}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderHairline}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="4"/>
+        <Setter Property="HasDropShadow" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ContextMenu">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="8" Padding="{TemplateBinding Padding}"
+                            Effect="{StaticResource CardShadow}" Margin="0,2,8,8">
+                        <StackPanel IsItemsHost="True"/>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="CardMenuItem" TargetType="MenuItem">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
+        <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="MenuItem">
+                    <Border x:Name="Bg" Background="Transparent" CornerRadius="5" Padding="10,6">
+                        <ContentPresenter ContentSource="Header" RecognizesAccessKey="True"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsHighlighted" Value="True">
+                            <Setter TargetName="Bg" Property="Background" Value="{StaticResource AccentMuted}"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+    <Style x:Key="MenuDivider" TargetType="Separator">
+        <Setter Property="Background" Value="{StaticResource BorderHairline}"/>
+        <Setter Property="Margin" Value="6,4"/>
+        <Setter Property="Height" Value="1"/>
+    </Style>
+</ResourceDictionary>

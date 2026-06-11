@@ -1,0 +1,35 @@
+# ---- .NET build output ----
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+TestResults/
+
+# ---- Published / packaged binaries (ship via GitHub Releases, not the repo) ----
+dist/
+publish/
+*.exe
+
+# ---- IDE ----
+.idea/
+.vs/
+*.userprefs
+
+# ---- AppShelf smoke-test scratch ----
+.smoke/
+
+# ---- AI agent harness (local development workflow — not part of the public project) ----
+.claude/
+.codex/
+.agents/
+process/
+.vibecode-backup/
+.vc-installed-files
+.vc-version
+CLAUDE.md
+AGENTS.md
+
+# Internal design/planning artifacts (kept locally, not published)
+docs/plans/
