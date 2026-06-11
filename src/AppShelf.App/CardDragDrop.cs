@@ -418,14 +418,27 @@ public static class CardDragDrop
     /// (the one whose DataContext is a <see cref="GroupCardViewModel"/>).</summary>
     private static FrameworkElement? FindAncestorGroupCard(DependencyObject from)
     {
-        var node = VisualTreeHelper.GetParent(from);
+        var node = GetParentSafe(from);
         while (node is not null)
         {
             if (node is FrameworkElement fe && fe.DataContext is GroupCardViewModel)
                 return fe;
-            node = VisualTreeHelper.GetParent(node);
+            node = GetParentSafe(node);
         }
         return null;
+    }
+
+    /// <summary>Visual-tree parent that tolerates ContentElements. A mouse event's OriginalSource is
+    /// a <see cref="Run"/> when the click lands on a TextBlock's text, and
+    /// <see cref="VisualTreeHelper.GetParent"/> throws ("not a Visual or Visual3D") on non-Visuals.
+    /// Hop to the content/logical parent in that case so the walk can continue up the tree.</summary>
+    private static DependencyObject? GetParentSafe(DependencyObject node)
+    {
+        if (node is Visual or System.Windows.Media.Media3D.Visual3D)
+            return VisualTreeHelper.GetParent(node);
+        if (node is ContentElement ce)
+            return ContentOperations.GetParent(ce) ?? (ce as FrameworkContentElement)?.Parent;
+        return (node as FrameworkElement)?.Parent;
     }
 
     // ------------------------------------------------------------------ validity + hints
@@ -477,7 +490,7 @@ public static class CardDragDrop
             // A TextBox (e.g. the logs panel) should keep normal mouse handling too.
             if (source is TextBox)
                 return true;
-            source = VisualTreeHelper.GetParent(source);
+            source = GetParentSafe(source);
         }
         return false;
     }

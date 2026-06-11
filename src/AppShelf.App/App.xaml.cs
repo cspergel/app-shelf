@@ -1,3 +1,4 @@
+using System.IO;
 using System.Threading;
 using System.Windows;
 using System.Windows.Threading;
@@ -77,22 +78,45 @@ public partial class App : Application
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
-        // A UI-thread exception (a failed launch, a locked config write, a bad URL). Show it and
-        // keep the app alive — the tray and any running servers stay intact.
+        // A UI-thread exception (a failed launch, a locked config write, a bad URL). Log the full
+        // detail, show the user the gist, and keep the app alive — the tray and running servers stay.
+        LogError(e.Exception);
         MessageBox.Show(
-            $"Something went wrong:\n\n{e.Exception.Message}",
+            $"Something went wrong:\n\n{e.Exception.Message}\n\nDetails were written to:\n{ErrorLogPath}",
             "AppShelf", MessageBoxButton.OK, MessageBoxImage.Error);
         e.Handled = true;
     }
 
     private void OnDomainUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
-        // Non-UI-thread fatal error. We can't recover, but we can say what happened. OnExit still
+        // Non-UI-thread fatal error. We can't recover, but we can record + report it. OnExit still
         // runs (kills the job-owned dev servers) on a normal shutdown path.
-        var message = (e.ExceptionObject as Exception)?.Message ?? "an unexpected error";
+        var ex = e.ExceptionObject as Exception;
+        LogError(ex);
         MessageBox.Show(
-            $"AppShelf hit a fatal error and must close:\n\n{message}",
+            $"AppShelf hit a fatal error and must close:\n\n{ex?.Message ?? "an unexpected error"}\n\n" +
+            $"Details were written to:\n{ErrorLogPath}",
             "AppShelf", MessageBoxButton.OK, MessageBoxImage.Error);
+    }
+
+    private static string ErrorLogPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AppShelf", "error.log");
+
+    /// <summary>Appends the full exception (with stack trace) to %APPDATA%\AppShelf\error.log so a
+    /// user can attach it to a bug report. Logging must never throw.</summary>
+    private static void LogError(Exception? ex)
+    {
+        try
+        {
+            var path = ErrorLogPath;
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.AppendAllText(path,
+                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {ex}{Environment.NewLine}{Environment.NewLine}");
+        }
+        catch
+        {
+            /* never let logging crash the crash handler */
+        }
     }
 
     private void ShowWindow() => _window.ShowFromTray();
