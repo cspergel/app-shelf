@@ -133,7 +133,7 @@ public sealed class StackDetectorTests : IDisposable
 
         var r = _detector.Detect(_dir);
 
-        Assert.Equal("streamlit run app.py", r!.Cmd);
+        Assert.Equal("python -m streamlit run app.py", r!.Cmd);
         Assert.Equal("http://localhost:8501", r.Url);
         Assert.Equal("Streamlit", r.Framework);
     }
@@ -145,8 +145,20 @@ public sealed class StackDetectorTests : IDisposable
 
         var r = _detector.Detect(_dir);
 
-        Assert.Equal("uvicorn main:app --reload", r!.Cmd);
+        Assert.Equal("python -m uvicorn main:app --reload", r!.Cmd);
         Assert.Equal("http://localhost:8000", r.Url);
+    }
+
+    [Fact]
+    public void Detect_FastAPI_ModuleNameFromActualFile()
+    {
+        // The uvicorn module path must come from the file that carried the FastAPI( signal,
+        // not a hardcoded "main" — a project whose app lives in server.py should still work.
+        Write("server.py", "from fastapi import FastAPI\napp = FastAPI()\n");
+
+        var r = _detector.Detect(_dir);
+
+        Assert.Equal("python -m uvicorn server:app --reload", r!.Cmd);
     }
 
     [Fact]
@@ -224,7 +236,7 @@ public sealed class StackDetectorTests : IDisposable
         var r = _detector.Detect(_dir);
 
         Assert.Equal("FastAPI", r!.Framework);
-        Assert.Equal("uvicorn main:app --reload", r.Cmd);
+        Assert.Equal("python -m uvicorn main:app --reload", r.Cmd);
         Assert.Equal(Path.Combine(_dir, "backend"), r.Dir);
     }
 

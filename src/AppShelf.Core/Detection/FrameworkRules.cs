@@ -29,8 +29,8 @@ public static class FrameworkRules
     /// </summary>
     public static readonly IReadOnlyList<PythonFrameworkRule> Python = new[]
     {
-        new PythonFrameworkRule("streamlit", "Streamlit", 8501, "streamlit run {file}"),
-        new PythonFrameworkRule("FastAPI(", "FastAPI", 8000, "uvicorn main:app --reload"),
+        new PythonFrameworkRule("streamlit", "Streamlit", 8501, "python -m streamlit run {file}"),
+        new PythonFrameworkRule("FastAPI(", "FastAPI", 8000, "python -m uvicorn {module}:app --reload"),
         new PythonFrameworkRule("Flask(__name__)", "Flask", 5000, "python {file}"),
         new PythonFrameworkRule("gradio", "Gradio", 7860, "python {file}"),
     };

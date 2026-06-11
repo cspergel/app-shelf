@@ -167,7 +167,11 @@ public sealed class StackDetector
             if (hit.Name is null)
                 continue;
 
-            var cmd = rule.CmdTemplate.Replace("{file}", hit.Name);
+            // {file} → the entry filename (e.g. main.py); {module} → its dotted-import name
+            // (e.g. main) for tools like uvicorn that take a module path, not a file path.
+            var cmd = rule.CmdTemplate
+                .Replace("{file}", hit.Name)
+                .Replace("{module}", Path.GetFileNameWithoutExtension(hit.Name));
             return new DetectionResult(
                 Cmd: cmd,
                 Url: $"http://localhost:{rule.DefaultPort}",
