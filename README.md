@@ -125,7 +125,7 @@ directory to use them. Ignore the folder entirely if you don't use Claude Code.
 - Config is JSON via `System.Text.Json`; process trees are killed via Win32 Job Objects
   (`KILL_ON_JOB_CLOSE`); liveness is a dual-stack TCP connect check.
 
-137 xUnit tests cover Core. See `Planning Spec/APPSHELF_SPEC.md` for the full design and rationale.
+137 xUnit tests cover Core.
 
 ## License
 
