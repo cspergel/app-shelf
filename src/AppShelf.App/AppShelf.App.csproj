@@ -15,6 +15,12 @@
     <UseWindowsForms>true</UseWindowsForms>
     <AssemblyName>AppShelf</AssemblyName>
     <RootNamespace>AppShelf.App</RootNamespace>
+    <ApplicationIcon>Resources\appshelf.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Embedded so the tray (and any window) can load it via a pack URI at runtime. -->
+    <Resource Include="Resources\appshelf.ico" />
+  </ItemGroup>
 
 </Project>

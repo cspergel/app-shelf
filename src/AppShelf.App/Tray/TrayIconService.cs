@@ -8,6 +8,7 @@ namespace AppShelf.App.Tray;
 public sealed class TrayIconService : IDisposable
 {
     private readonly Forms.NotifyIcon _icon;
+    private readonly Icon? _appIcon;
 
     public TrayIconService(Action open, Action add, Action ports, Action quit)
     {
@@ -18,9 +19,11 @@ public sealed class TrayIconService : IDisposable
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add("Quit", null, (_, _) => quit());
 
+        _appIcon = LoadAppIcon();
+
         _icon = new Forms.NotifyIcon
         {
-            Icon = SystemIcons.Application,
+            Icon = _appIcon ?? SystemIcons.Application,
             Visible = true,
             Text = "AppShelf",
             ContextMenuStrip = menu,
@@ -28,9 +31,29 @@ public sealed class TrayIconService : IDisposable
         _icon.DoubleClick += (_, _) => open();
     }
 
+    /// <summary>Loads the embedded brand icon at the tray's preferred small size, falling back to
+    /// the system icon if anything goes wrong.</summary>
+    private static Icon? LoadAppIcon()
+    {
+        try
+        {
+            var info = System.Windows.Application.GetResourceStream(
+                new Uri("pack://application:,,,/Resources/appshelf.ico"));
+            if (info is null)
+                return null;
+            using var stream = info.Stream;
+            return new Icon(stream, Forms.SystemInformation.SmallIconSize);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public void Dispose()
     {
         _icon.Visible = false;
         _icon.Dispose();
+        _appIcon?.Dispose();
     }
 }
