@@ -186,8 +186,17 @@
                                    Foreground="{StaticResource TextFaint}" FontSize="11" VerticalAlignment="Center"/>
                     </Grid>
 
+                    <!-- Pre-flight reason: plain-English block on a failed launch (wraps) -->
+                    <TextBlock Margin="24,8,0,0" TextWrapping="Wrap" FontSize="11"
+                               Foreground="{StaticResource StatusError}" Text="{Binding Reason}"
+                               Visibility="{Binding Reason, Converter={StaticResource StringToVis}}"/>
+
                     <!-- Action row: primary + contextual + overflow menu -->
                     <DockPanel Margin="0,12,0,0" LastChildFill="False">
+                        <Button DockPanel.Dock="Left" Content="Run setup" Style="{StaticResource PrimaryButton}"
+                                Command="{Binding RunSetupCommand}"
+                                ToolTip="Run the install command, then retry"
+                                Visibility="{Binding CanRunSetup, Converter={StaticResource BoolToVis}}"/>
                         <Button DockPanel.Dock="Left" Content="▶ Launch" Style="{StaticResource PrimaryButton}"
                                 Command="{Binding LaunchCommand}"
                                 Visibility="{Binding IsStopped, Converter={StaticResource BoolToVis}}"/>
@@ -365,8 +374,17 @@
                                    Foreground="{StaticResource TextFaint}" FontSize="11" VerticalAlignment="Center"/>
                     </Grid>
 
+                    <!-- Pre-flight reason: plain-English block on a failed launch (wraps) -->
+                    <TextBlock Margin="24,8,0,0" TextWrapping="Wrap" FontSize="11"
+                               Foreground="{StaticResource StatusError}" Text="{Binding Reason}"
+                               Visibility="{Binding Reason, Converter={StaticResource StringToVis}}"/>
+
                     <!-- Action row -->
                     <DockPanel Margin="0,12,0,12" LastChildFill="False">
+                        <Button DockPanel.Dock="Left" Content="Run setup" Style="{StaticResource PrimaryButton}"
+                                Command="{Binding RunSetupCommand}"
+                                ToolTip="Run the install command, then retry"
+                                Visibility="{Binding CanRunSetup, Converter={StaticResource BoolToVis}}"/>
                         <Button DockPanel.Dock="Left" Content="▶ Launch" Style="{StaticResource PrimaryButton}"
                                 Command="{Binding LaunchCommand}"
                                 Visibility="{Binding IsStopped, Converter={StaticResource BoolToVis}}"/>
@@ -482,6 +500,8 @@
                             <Button Content="Start all" Style="{StaticResource PrimaryButton}" Command="{Binding StartAllCommand}"/>
                             <Button Content="Stop all" Style="{StaticResource GhostButton}" Command="{Binding StopAllCommand}"/>
                             <Button Content="Open" Style="{StaticResource GhostButton}" Command="{Binding OpenCommand}"/>
+                            <Button Content="Rename" Style="{StaticResource GhostButton}" Command="{Binding RenameCommand}"
+                                    ToolTip="Rename this group"/>
                             <Button Style="{StaticResource GhostButton}" Command="{Binding ToggleExpandCommand}"
                                     ToolTip="Show / hide members" Padding="10,6">
                                 <Path Data="M 0 0 L 4 4 L 8 0" Stroke="{StaticResource TextSecondary}" StrokeThickness="1.6"

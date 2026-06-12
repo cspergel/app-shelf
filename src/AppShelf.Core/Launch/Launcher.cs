@@ -5,7 +5,12 @@ using AppShelf.Core.Process;
 
 namespace AppShelf.Core.Launch;
 
-public sealed record LaunchResult(LaunchStatus Status, ProcessManager.RunningApp? Running, IReadOnlyList<string> LogTail)
+public sealed record LaunchResult(
+    LaunchStatus Status,
+    ProcessManager.RunningApp? Running,
+    IReadOnlyList<string> LogTail,
+    string? Reason = null,
+    bool CanRunSetup = false)
 {
     public static LaunchResult Ok(LaunchStatus status, ProcessManager.RunningApp? running = null) =>
         new(status, running, running?.LogTail ?? Array.Empty<string>());
@@ -50,7 +55,12 @@ public sealed class Launcher
             return LaunchResult.Ok(LaunchStatus.Running);
         }
 
-        // 3. Spawn it.
+        // 3. Pre-flight: catch fixable failures (missing folder, uninstalled deps) with a
+        //    plain-English reason instead of spawning a doomed process.
+        if (LaunchPreflight.Check(entry) is { } issue)
+            return new LaunchResult(LaunchStatus.Error, null, Array.Empty<string>(), issue.Reason, issue.CanRunSetup);
+
+        // 4. Spawn it.
         var running = _processes.Start(entry);
 
         // 4. Poll for the port to come up.

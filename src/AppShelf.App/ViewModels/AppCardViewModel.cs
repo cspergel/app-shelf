@@ -16,6 +16,9 @@ public sealed class AppCardViewModel : ObservableObject
     private LaunchStatus _status;
     private bool _showLogs;
     private string _logs = "";
+    private string _reason = "";
+    private bool _canRunSetup;
+    private bool _isSettingUp;
 
     public AppCardViewModel(
         AppEntry entry,
@@ -38,6 +41,7 @@ public sealed class AppCardViewModel : ObservableObject
         RemoveCommand = new RelayCommand(() => _removeRequested(this));
         ToggleFavoriteCommand = new RelayCommand(ToggleFavorite);
         ToggleLogsCommand = new RelayCommand(() => ShowLogs = !ShowLogs);
+        RunSetupCommand = new AsyncRelayCommand(RunSetupAsync, () => CanRunSetup && !IsSettingUp);
 
         // Initial status is Stopped (the enum default); the owner kicks off an async poll right
         // after building the cards, so we never block the UI thread probing ports during load.
@@ -101,6 +105,27 @@ public sealed class AppCardViewModel : ObservableObject
         private set => SetField(ref _logs, value);
     }
 
+    /// <summary>Plain-English reason the last launch was blocked (pre-flight), or "" when none.</summary>
+    public string Reason
+    {
+        get => _reason;
+        private set => SetField(ref _reason, value);
+    }
+
+    /// <summary>True when the blocking reason is plausibly fixable by running the install command.</summary>
+    public bool CanRunSetup
+    {
+        get => _canRunSetup;
+        private set => SetField(ref _canRunSetup, value);
+    }
+
+    /// <summary>True while the install command is running (disables the Run setup button).</summary>
+    public bool IsSettingUp
+    {
+        get => _isSettingUp;
+        private set => SetField(ref _isSettingUp, value);
+    }
+
     public ICommand LaunchCommand { get; }
     public ICommand OpenCommand { get; }
     public ICommand StopCommand { get; }
@@ -109,6 +134,7 @@ public sealed class AppCardViewModel : ObservableObject
     public ICommand RemoveCommand { get; }
     public ICommand ToggleFavoriteCommand { get; }
     public ICommand ToggleLogsCommand { get; }
+    public ICommand RunSetupCommand { get; }
 
     /// <summary>One-click favorite: flip the flag, notify the binding, then hand off to the
     /// owner (MainViewModel) to persist via ConfigStore and re-sort the grid.</summary>
@@ -158,10 +184,60 @@ public sealed class AppCardViewModel : ObservableObject
         var result = await _service.LaunchAsync(Entry);
         Status = result.Status;
         OnPropertyChanged(nameof(LastLaunchedText));
+
+        Reason = result.Reason ?? "";
+        CanRunSetup = result.CanRunSetup;
+
         if (result.Status == LaunchStatus.Error)
         {
-            ShowLogs = true;
-            Logs = result.LogTail.Count == 0 ? "(failed to start; no output captured)" : string.Join(Environment.NewLine, result.LogTail);
+            // A pre-flight block carries a plain-English Reason but no captured output — keep the
+            // log panel closed so the reason (and any "Run setup" button) is the focus. A real
+            // spawn failure has a log tail worth showing.
+            if (result.LogTail.Count > 0)
+            {
+                ShowLogs = true;
+                Logs = string.Join(Environment.NewLine, result.LogTail);
+            }
+            else if (string.IsNullOrEmpty(Reason))
+            {
+                ShowLogs = true;
+                Logs = "(failed to start; no output captured)";
+            }
+        }
+        else
+        {
+            // Cleared on any non-error outcome (running / starting).
+            Reason = "";
+            CanRunSetup = false;
+        }
+    }
+
+    /// <summary>One-click "Run setup": run the app's install command, stream its output into the
+    /// log panel, and on success auto-retry the launch.</summary>
+    private async Task RunSetupAsync()
+    {
+        IsSettingUp = true;
+        ShowLogs = true;
+        Logs = "Running setup…";
+        try
+        {
+            var outcome = await _service.RunSetupAsync(Entry);
+            Logs = outcome.Output.Count == 0
+                ? "(setup produced no output)"
+                : string.Join(Environment.NewLine, outcome.Output);
+
+            if (outcome.Ok)
+            {
+                Reason = "";
+                CanRunSetup = false;
+                IsSettingUp = false; // clear before retry so the launch flow owns state
+                await LaunchAsync();
+                return;
+            }
+        }
+        finally
+        {
+            IsSettingUp = false;
         }
     }
 
