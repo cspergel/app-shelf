@@ -27,6 +27,11 @@ public sealed class GuiAppService : IDisposable
 
     public Task<LaunchResult> LaunchAsync(AppEntry entry) => _launcher.LaunchAsync(entry);
 
+    /// <summary>Run the app's install command to completion (one-click "Run setup" after a
+    /// fixable pre-flight failure), capturing its output for the log panel.</summary>
+    public Task<ProcessManager.SetupOutcome> RunSetupAsync(AppEntry entry) =>
+        ProcessManager.RunSetupAsync(entry.Dir ?? "", entry.InstallCmd ?? "");
+
     /// <summary>Open the target without launching (warm reopen / already-running).</summary>
     public void Open(AppEntry entry) => _opener.Open(entry);
 
@@ -57,6 +62,19 @@ public sealed class GuiAppService : IDisposable
     public AppEntry Add(AppEntry entry) => _store.AddApp(entry);
     public void Update(AppEntry entry) => _store.UpdateApp(entry);
 
+    /// <summary>The configured Spotlight hotkey string, or null/empty when none is set (use the
+    /// built-in default chain).</summary>
+    public string? GetHotkey() => _store.Load().Hotkey;
+
+    /// <summary>Persist the Spotlight hotkey string. Pass null/empty to clear it (revert to the
+    /// default chain). Writes through the same atomic ConfigStore save path as everything else.</summary>
+    public void SetHotkey(string? combo)
+    {
+        var config = _store.Load();
+        config.Hotkey = string.IsNullOrWhiteSpace(combo) ? null : combo.Trim();
+        _store.Save(config);
+    }
+
     /// <summary>Apply a label-only regroup: for each change, load the app, set its
     /// <see cref="AppEntry.Group"/>/<see cref="AppEntry.Role"/>/<see cref="AppEntry.Order"/> and
     /// persist (atomic per app). Never starts or stops a process.</summary>
@@ -75,6 +93,25 @@ public sealed class GuiAppService : IDisposable
             _store.UpdateApp(app);
         }
     }
+    /// <summary>Rename a group: re-label every member whose <see cref="AppEntry.Group"/> matches
+    /// <paramref name="oldName"/> (case-insensitive) to the trimmed <paramref name="newName"/> and
+    /// persist (atomic per app, same door as <see cref="ApplyRegroup"/>). Label-only — never starts
+    /// or stops a process. No-op when the new name is blank or unchanged.</summary>
+    public void RenameGroup(string oldName, string newName)
+    {
+        if (string.IsNullOrWhiteSpace(newName) || string.Equals(newName, oldName, StringComparison.Ordinal))
+            return;
+
+        var trimmed = newName.Trim();
+        foreach (var app in LoadApps())
+        {
+            if (!string.Equals(app.Group, oldName, StringComparison.OrdinalIgnoreCase))
+                continue;
+            app.Group = trimmed;
+            _store.UpdateApp(app);
+        }
+    }
+
     public void Remove(AppEntry entry)
     {
         _processes.Stop(entry.Id); // stop if running, then forget

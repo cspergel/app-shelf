@@ -23,6 +23,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\AppShelf.Core\AppShelf.Core.csproj" />
+    <!-- Referenced for the pure HotkeyCombo parser/formatter (no live WPF dispatcher needed). -->
+    <ProjectReference Include="..\..\src\AppShelf.App\AppShelf.App.csproj" />
   </ItemGroup>
 
 </Project>

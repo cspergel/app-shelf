@@ -10,10 +10,12 @@ public sealed class TrayIconService : IDisposable
     private readonly Forms.NotifyIcon _icon;
     private readonly Icon? _appIcon;
 
-    public TrayIconService(Action open, Action add, Action ports, Action quit)
+    public TrayIconService(Action open, Action search, Action hotkey, Action add, Action ports, Action quit)
     {
         var menu = new Forms.ContextMenuStrip();
         menu.Items.Add("Open AppShelf", null, (_, _) => open());
+        menu.Items.Add("Search…", null, (_, _) => search());
+        menu.Items.Add("Hotkey…", null, (_, _) => hotkey());
         menu.Items.Add("Add app…", null, (_, _) => add());
         menu.Items.Add("Ports…", null, (_, _) => ports());
         menu.Items.Add(new Forms.ToolStripSeparator());

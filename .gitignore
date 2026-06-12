@@ -34,3 +34,9 @@ AGENTS.md
 # Internal design/planning artifacts (kept locally, not published)
 docs/plans/
 Planning Spec/
+
+# Local oversight/governance tooling (not part of the project)
+.governor/
+INTENT.md
+.charter/
+CHARTER.md

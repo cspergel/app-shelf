@@ -1,11 +1,14 @@
 using System.IO;
 using System.Threading;
 using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Threading;
 using AppShelf.App.Dialogs;
 using AppShelf.App.Services;
+using AppShelf.App.Spotlight;
 using AppShelf.App.Tray;
 using AppShelf.App.ViewModels;
+using Forms = System.Windows.Forms;
 
 namespace AppShelf.App;
 
@@ -24,6 +27,8 @@ public partial class App : Application
     private IAppDialogs _dialogs = null!;
     private TrayIconService _tray = null!;
     private MainWindow _window = null!;
+    private SpotlightWindow _spotlight = null!;
+    private HotkeyService? _hotkey;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -58,7 +63,21 @@ public partial class App : Application
             _window = new MainWindow(viewModel);
             MainWindow = _window; // so modal dialogs can anchor to it
 
-            _tray = new TrayIconService(open: ShowWindow, add: AddFromTray, ports: ShowPorts, quit: QuitApp);
+            // Create the Spotlight overlay HIDDEN. EnsureHandle materialises the HWND without
+            // showing the window — required before HotkeyService can RegisterHotKey against it.
+            var spotlightVm = new SpotlightViewModel(_service);
+            _spotlight = new SpotlightWindow(spotlightVm);
+            new WindowInteropHelper(_spotlight).EnsureHandle();
+
+            _hotkey = new HotkeyService(_spotlight, ToggleSpotlight, _service.GetHotkey());
+
+            _tray = new TrayIconService(
+                open: ShowWindow,
+                search: ShowSpotlight,
+                hotkey: ShowHotkeySettings,
+                add: AddFromTray,
+                ports: ShowPorts,
+                quit: QuitApp);
 
             // Show on launch (so `appshelf open` produces a window); close hides back to the tray.
             _window.Show();
@@ -128,6 +147,67 @@ public partial class App : Application
         ports.ShowDialog();
     }
 
+    /// <summary>Open the Hotkey settings dialog. A successful change re-registers the global hotkey
+    /// live (no restart) via <see cref="HotkeyService.TrySetHotkey"/> and persists it to config; the
+    /// dialog restores the previous binding if a chosen combo is already in use by another app.</summary>
+    private void ShowHotkeySettings()
+    {
+        if (_hotkey is null)
+            return;
+
+        var owner = _window.IsVisible ? _window : null;
+        var dialog = new HotkeyWindow(
+            currentHotkey: _hotkey.ActiveHotkey,
+            tryRegister: _hotkey.TrySetHotkey,
+            persist: _service.SetHotkey)
+        {
+            Owner = owner,
+        };
+        dialog.ShowDialog();
+    }
+
+    private void ToggleSpotlight()
+    {
+        if (_spotlight.IsVisible)
+            _spotlight.Hide();
+        else
+            ShowSpotlight();
+    }
+
+    private void ShowSpotlight()
+    {
+        // Position: centre on the monitor under the cursor, in its upper third vertically.
+        var screen = Forms.Screen.FromPoint(Forms.Cursor.Position);
+        var workArea = screen.WorkingArea;
+
+        // SpotlightWindow uses SizeToContent, so force a layout pass to get a valid DesiredSize.
+        _spotlight.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        _spotlight.Arrange(new Rect(_spotlight.DesiredSize));
+
+        var source = PresentationSource.FromVisual(_spotlight)
+                     ?? PresentationSource.FromVisual(_window);
+        var scaleX = source?.CompositionTarget?.TransformFromDevice.M11 ?? 1.0;
+        var scaleY = source?.CompositionTarget?.TransformFromDevice.M22 ?? 1.0;
+
+        // WorkingArea is in physical pixels; window Left/Top are in DIPs.
+        var dipLeft = workArea.Left * scaleX;
+        var dipTop = workArea.Top * scaleY;
+        var dipWidth = workArea.Width * scaleX;
+        var dipHeight = workArea.Height * scaleY;
+
+        var winW = _spotlight.DesiredSize.Width;
+        var winH = _spotlight.DesiredSize.Height;
+
+        _spotlight.Left = dipLeft + (dipWidth - winW) / 2;
+        _spotlight.Top = dipTop + (dipHeight - winH) / 3; // upper-third, not dead centre
+
+        if (_spotlight.DataContext is SpotlightViewModel vm)
+            vm.Reset();
+
+        _spotlight.Show();
+        _spotlight.Activate();
+    }
+
     private void AddFromTray()
     {
         _window.ShowFromTray();
@@ -143,6 +223,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _hotkey?.Dispose();
         _tray?.Dispose();
         _service?.Dispose(); // kills all running dev-server trees, frees ports (hard quit)
         _singleInstance?.Dispose();
