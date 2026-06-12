@@ -12,21 +12,24 @@ public sealed class GroupCardViewModel : ObservableObject
 {
     private readonly GuiAppService _service;
     private readonly IAppDialogs _dialogs;
+    private readonly Action? _reloadRequested;
     private bool _isExpanded;
     private GroupAggregateStatus _statusPill;
 
     public GroupCardViewModel(string name, IReadOnlyList<AppCardViewModel> members,
-        GuiAppService service, IAppDialogs dialogs)
+        GuiAppService service, IAppDialogs dialogs, Action? reloadRequested = null)
     {
         Name = name;
         _service = service;
         _dialogs = dialogs;
+        _reloadRequested = reloadRequested;
         foreach (var m in members)
             Members.Add(m);
 
         StartAllCommand = new AsyncRelayCommand(StartAllAsync);
         StopAllCommand = new RelayCommand(StopAll);
         OpenCommand = new RelayCommand(Open);
+        RenameCommand = new RelayCommand(Rename);
         ToggleExpandCommand = new RelayCommand(() => IsExpanded = !IsExpanded);
 
         RecomputePill();
@@ -78,6 +81,7 @@ public sealed class GroupCardViewModel : ObservableObject
     public ICommand StartAllCommand { get; }
     public ICommand StopAllCommand { get; }
     public ICommand OpenCommand { get; }
+    public ICommand RenameCommand { get; }
     public ICommand ToggleExpandCommand { get; }
 
     /// <summary>Most-recent member launch — used by the main view's recency sort.</summary>
@@ -130,6 +134,18 @@ public sealed class GroupCardViewModel : ObservableObject
 
         _service.StopGroup(ordered);
         RefreshStatuses();
+    }
+
+    /// <summary>Prompt for a new group name and re-label every member (label-only, via
+    /// <see cref="GuiAppService.RenameGroup"/>), then ask the host to reload so the grid re-renders.
+    /// No-op on cancel, blank, or unchanged name.</summary>
+    private void Rename()
+    {
+        var name = _dialogs.PromptRename("Rename group", "Group name", Name);
+        if (string.IsNullOrWhiteSpace(name) || string.Equals(name, Name, StringComparison.Ordinal))
+            return;
+        _service.RenameGroup(Name, name);
+        _reloadRequested?.Invoke();
     }
 
     /// <summary>Open the group's frontend (fallback: first member with a URL).</summary>

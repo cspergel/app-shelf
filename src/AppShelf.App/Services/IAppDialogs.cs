@@ -17,6 +17,10 @@ public interface IAppDialogs
     /// <summary>Show an informational message (e.g. a failed-kill reason).</summary>
     void Info(string message, string title);
 
+    /// <summary>Prompt for a single line of text (e.g. renaming a group). Returns the trimmed text,
+    /// or null when the user cancels.</summary>
+    string? PromptRename(string title, string label, string initial);
+
     /// <summary>Show the create-group dialog with a pre-filled name and a role combo per member.
     /// Returns the chosen name + per-app roles, or null when the user cancels (aborting the drop).</summary>
     GroupCreateResult? PromptGroupCreate(

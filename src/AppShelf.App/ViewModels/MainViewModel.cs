@@ -78,7 +78,7 @@ public sealed class MainViewModel : ObservableObject
         foreach (var group in groups)
         {
             var members = group.Members.Select(MakeCard).ToList();
-            _groups.Add(new GroupCardViewModel(group.Name, members, _service, _dialogs)
+            _groups.Add(new GroupCardViewModel(group.Name, members, _service, _dialogs, LoadAll)
             {
                 IsExpanded = expandedGroups.Contains(group.Name),
             });
