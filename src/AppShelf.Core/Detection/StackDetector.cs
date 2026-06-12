@@ -167,19 +167,63 @@ public sealed class StackDetector
             if (hit.Name is null)
                 continue;
 
-            // {file} → the entry filename (e.g. main.py); {module} → its dotted-import name
-            // (e.g. main) for tools like uvicorn that take a module path, not a file path.
+            var workingDir = dir;
+            var module = Path.GetFileNameWithoutExtension(hit.Name);
+
+            // Module-path tools (uvicorn) import the app as a package. If the entry file sits inside
+            // a Python package (its folder — or an ancestor — has __init__.py), run from the package
+            // root's PARENT and use the dotted module path (e.g. `app.main:app` from backend\, not
+            // `main:app` from backend\app\, which can't resolve `from app.routers...` imports).
+            // File-path tools (streamlit/flask run the file directly) stay in the file's own folder.
+            if (rule.CmdTemplate.Contains("{module}"))
+            {
+                var (root, prefix) = ResolvePackageRoot(dir);
+                workingDir = root;
+                if (prefix.Length > 0)
+                    module = $"{prefix}.{module}";
+            }
+
+            // {file} → the entry filename (e.g. main.py); {module} → its dotted-import name.
             var cmd = rule.CmdTemplate
                 .Replace("{file}", hit.Name)
-                .Replace("{module}", Path.GetFileNameWithoutExtension(hit.Name));
+                .Replace("{module}", module);
+
+            // Offer a sensible install command so the GUI's one-click "Run setup" can fix a fresh
+            // checkout whose dependencies aren't installed yet.
+            var installCmd = File.Exists(Path.Combine(workingDir, "requirements.txt"))
+                ? "pip install -r requirements.txt"
+                : null;
+
             return new DetectionResult(
                 Cmd: cmd,
                 Url: $"http://localhost:{rule.DefaultPort}",
-                InstallCmd: null,
+                InstallCmd: installCmd,
                 Framework: rule.Framework,
-                Dir: dir);
+                Dir: workingDir);
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// If <paramref name="dir"/> is inside a Python package — it, or an unbroken chain of ancestors,
+    /// contains <c>__init__.py</c> — returns the package root's PARENT directory plus the dotted
+    /// package prefix (e.g. <c>…\backend\app</c> with <c>app\__init__.py</c> → (<c>…\backend</c>,
+    /// "app")). Otherwise returns (<paramref name="dir"/>, ""). Used to build a correct dotted
+    /// module path for uvicorn-style launchers.
+    /// </summary>
+    private static (string Root, string Prefix) ResolvePackageRoot(string dir)
+    {
+        var parts = new List<string>();
+        var current = dir;
+        while (File.Exists(Path.Combine(current, "__init__.py")))
+        {
+            parts.Insert(0, Path.GetFileName(current));
+            var parent = Path.GetDirectoryName(current);
+            if (string.IsNullOrEmpty(parent))
+                break;
+            current = parent;
+        }
+        return (current, string.Join(".", parts));
     }
 }

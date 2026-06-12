@@ -162,6 +162,21 @@ public sealed class StackDetectorTests : IDisposable
     }
 
     [Fact]
+    public void Detect_FastAPI_InPackage_UsesDottedModuleFromPackageParent()
+    {
+        // app/ is a Python package (has __init__.py); its main.py imports `from app...`, so it
+        // must run as `app.main:app` from the package's PARENT, not `main:app` from inside app/.
+        WriteIn("app", "__init__.py", "");
+        WriteIn("app", "main.py", "from fastapi import FastAPI\napp = FastAPI()\n");
+
+        var r = _detector.Detect(_dir);
+
+        Assert.Equal("FastAPI", r!.Framework);
+        Assert.Equal("python -m uvicorn app.main:app --reload", r.Cmd);
+        Assert.Equal(_dir, r.Dir);
+    }
+
+    [Fact]
     public void Detect_Flask_PythonEntryFile()
     {
         Write("app.py", "from flask import Flask\napp = Flask(__name__)\n");
