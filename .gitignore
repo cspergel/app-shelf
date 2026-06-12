@@ -21,10 +21,12 @@ publish/
 .smoke/
 
 # ---- AI agent harness (local development workflow — not part of the public project) ----
+# NOTE: leading slash anchors these to the repo root. Without it, "process/" would also match
+# src/AppShelf.Core/Process/ (Git is case-insensitive on Windows) and silently drop core source.
 .claude/
 .codex/
 .agents/
-process/
+/process/
 .vibecode-backup/
 .vc-installed-files
 .vc-version
