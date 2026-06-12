@@ -47,9 +47,11 @@
                      Visibility="{Binding HasResults, Converter={StaticResource BoolToVis}}">
                 <ListBox.ItemContainerStyle>
                     <Style TargetType="ListBoxItem">
+                        <EventSetter Event="PreviewMouseLeftButtonUp" Handler="OnItemClick"/>
                         <Setter Property="Background" Value="Transparent"/>
                         <Setter Property="Padding" Value="8,6"/>
                         <Setter Property="Margin" Value="0,1"/>
+                        <Setter Property="Cursor" Value="Hand"/>
                         <Setter Property="Template">
                             <Setter.Value>
                                 <ControlTemplate TargetType="ListBoxItem">

@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using AppShelf.App.ViewModels;
 
@@ -56,5 +57,24 @@ public partial class SpotlightWindow : Window
                 e.Handled = true;
                 break;
         }
+    }
+
+    // Single click on a result launches/opens it (launcher convention), then hides the overlay.
+    private async void OnItemClick(object sender, MouseButtonEventArgs e)
+    {
+        if (DataContext is not SpotlightViewModel vm)
+            return;
+
+        if (sender is ListBoxItem item)
+        {
+            var index = ResultsListBox.ItemContainerGenerator.IndexFromContainer(item);
+            if (index >= 0)
+                vm.SelectedIndex = index;
+        }
+
+        var acted = await vm.ActivateSelectedAsync();
+        if (acted)
+            Hide();
+        e.Handled = true;
     }
 }
