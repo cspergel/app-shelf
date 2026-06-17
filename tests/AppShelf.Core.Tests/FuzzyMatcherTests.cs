@@ -34,7 +34,7 @@ public class FuzzyMatcherTests
     [Fact]
     public void PrefixBonus_BeatsScatteredMatch()
     {
-        var atStart = FuzzyMatcher.Score("sn", "SNF Admit");
+        var atStart = FuzzyMatcher.Score("sn", "Snapshot Tool");
         var scattered = FuzzyMatcher.Score("sn", "Assistant Notes"); // s...n scattered, not prefix
 
         Assert.NotNull(atStart);
