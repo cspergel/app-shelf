@@ -170,11 +170,21 @@
                 <DataGridTextColumn Header="Service" Binding="{Binding ServiceBadge}" Width="80"/>
                 <DataGridTextColumn Header="Owner" Binding="{Binding Owner}" Width="*"/>
                 <DataGridTextColumn Header="Parent" Binding="{Binding ParentAlive}" Width="70"/>
-                <DataGridTemplateColumn Header="" Width="70">
+                <DataGridTemplateColumn Header="" Width="200">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <Button Content="Kill" Style="{StaticResource DangerGhostButton}" Margin="2"
-                                    Command="{Binding KillCommand}"/>
+                            <StackPanel Orientation="Horizontal">
+                                <Button Content="Reclaim" Style="{StaticResource GhostButton}" Margin="2"
+                                        Command="{Binding ReclaimCommand}"
+                                        Visibility="{Binding CanReclaim, Converter={StaticResource BoolToVis}}"
+                                        ToolTip="Kill the orphan and relaunch the registered app"/>
+                                <Button Content="Stop service" Style="{StaticResource GhostButton}" Margin="2"
+                                        Command="{Binding StopServiceCommand}"
+                                        Visibility="{Binding CanStopService, Converter={StaticResource BoolToVis}}"
+                                        ToolTip="Stop the Windows service via a UAC-elevated Stop-Service command"/>
+                                <Button Content="Kill" Style="{StaticResource DangerGhostButton}" Margin="2"
+                                        Command="{Binding KillCommand}"/>
+                            </StackPanel>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>

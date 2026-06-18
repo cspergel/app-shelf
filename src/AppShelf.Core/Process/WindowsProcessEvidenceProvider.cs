@@ -26,6 +26,7 @@ public sealed class WindowsProcessEvidenceProvider : IProcessEvidenceProvider
         DateTimeOffset? started = null;
         bool parentAlive = true;
         bool isService = false;
+        string? serviceName = null;
         IReadOnlyList<AncestorInfo>? ancestry = null;
 
         try
@@ -39,7 +40,7 @@ public sealed class WindowsProcessEvidenceProvider : IProcessEvidenceProvider
 
             // Service-host PIDs from the SCM (running services + their host PIDs). Queried once
             // per ForPid (matches the existing WMI-per-ForPid pattern; the set is small).
-            var serviceHostPids = QueryRunningServiceHostPids();
+            var (serviceHostPids, serviceNames) = QueryRunningServiceHostsWithNames();
 
             // Immediate parent (for ParentAlive + IsService — preserve existing logic)
             string? immediateParentExe = null;
@@ -57,6 +58,14 @@ public sealed class WindowsProcessEvidenceProvider : IProcessEvidenceProvider
             // httpd worker whose parent is the master httpd, not services.exe).
             isService = IsServiceParent(immediateParentExe)
                         || IsServiceBacked(pid, snapshotDict, serviceHostPids, MaxAncestryDepth);
+
+            // When service-backed, resolve the SCM internal service name (for an elevated
+            // Stop-Service). Walk to the matching service-host PID and look its name up in the WMI
+            // PID→name map. Null when the host PID has no name (e.g. the services.exe-parent signal
+            // fired but the host PID is not in the running-service set).
+            if (isService &&
+                TryFindServiceHost(pid, snapshotDict, serviceHostPids, MaxAncestryDepth, out var hostPid))
+                serviceNames.TryGetValue(hostPid, out serviceName);
 
             // Build the full ancestry chain (pure — no WMI yet; liveness injected)
             var chain = WalkAncestry(
@@ -94,7 +103,7 @@ public sealed class WindowsProcessEvidenceProvider : IProcessEvidenceProvider
         }
         catch (ArgumentException) { /* process gone between scan and query */ }
 
-        return new ProcessEvidence(pid, name, exe, cmdLine, exeDir, started, parentAlive, isService, ancestry);
+        return new ProcessEvidence(pid, name, exe, cmdLine, exeDir, started, parentAlive, isService, ancestry, serviceName);
     }
 
     /// <summary>
@@ -148,9 +157,38 @@ public sealed class WindowsProcessEvidenceProvider : IProcessEvidenceProvider
         int pid,
         Dictionary<uint, (uint ParentPid, string ExeName)> snapshotDict,
         IReadOnlySet<int> serviceHostPids,
-        int maxDepth)
+        int maxDepth) =>
+        TryFindServiceHost(pid, snapshotDict, serviceHostPids, maxDepth, out _);
+
+    /// <summary>
+    /// Pure walk that finds the service-host PID backing <paramref name="pid"/>: returns
+    /// <c>true</c> and sets <paramref name="matchedHostPid"/> when <paramref name="pid"/> itself or
+    /// any ancestor (up to <paramref name="maxDepth"/>) is a member of
+    /// <paramref name="serviceHostPids"/>; otherwise returns <c>false</c> and sets
+    /// <paramref name="matchedHostPid"/> to 0.
+    ///
+    /// Same walk semantics as the former <see cref="IsServiceBacked"/> body: raw parent links
+    /// (independent of alive-state), cycle guard (visited set), System/root sentinels (parent PID 0
+    /// or 4), and a depth cap. The returned host PID lets callers look the matching service NAME up
+    /// in the WMI PID→name map from <see cref="QueryRunningServiceHostsWithNames"/>.
+    ///
+    /// PID-reuse caveat: identical to <see cref="IsServiceBacked"/> — a recycled PID could in
+    /// theory match a current service-host PID, but that is a membership test against the SCM's own
+    /// list (not a guessed lineage), so a false positive only mislabels a port as service-backed
+    /// (fail-safe direction).
+    /// </summary>
+    internal static bool TryFindServiceHost(
+        int pid,
+        Dictionary<uint, (uint ParentPid, string ExeName)> snapshotDict,
+        IReadOnlySet<int> serviceHostPids,
+        int maxDepth,
+        out int matchedHostPid)
     {
-        if (serviceHostPids.Contains(pid)) return true;
+        if (serviceHostPids.Contains(pid))
+        {
+            matchedHostPid = pid;
+            return true;
+        }
 
         var visited = new HashSet<uint> { (uint)pid };
         uint currentPid = (uint)pid;
@@ -164,10 +202,16 @@ public sealed class WindowsProcessEvidenceProvider : IProcessEvidenceProvider
             if (parentPid == 0 || parentPid == 4) break; // System / root sentinel
             if (!visited.Add(parentPid)) break;          // cycle guard
 
-            if (serviceHostPids.Contains((int)parentPid)) return true;
+            if (serviceHostPids.Contains((int)parentPid))
+            {
+                matchedHostPid = (int)parentPid;
+                return true;
+            }
 
             currentPid = parentPid;
         }
+
+        matchedHostPid = 0;
         return false;
     }
 
@@ -360,35 +404,58 @@ public sealed class WindowsProcessEvidenceProvider : IProcessEvidenceProvider
     }
 
     /// <summary>
-    /// Returns the set of host process IDs of currently-running Windows services, via WMI
-    /// <c>Win32_Service</c>. Used by <see cref="IsServiceBacked"/> to flag service workers whose
-    /// immediate parent is not <c>services.exe</c>. ProcessId 0 (reported by stopped services) is
-    /// excluded. Never throws: any WMI failure (service unavailable, access denied) degrades to an
-    /// empty set, so detection simply falls back to the immediate-parent signal.
+    /// Returns the host process IDs of currently-running Windows services AND a PID→service-name
+    /// map, via WMI <c>Win32_Service</c>. <see cref="Pids"/> is used by
+    /// <see cref="IsServiceBacked"/> / <see cref="TryFindServiceHost"/> to flag service workers
+    /// whose immediate parent is not <c>services.exe</c>; <see cref="Names"/> supplies the SCM
+    /// internal service name (WMI <c>Name</c>, not <c>DisplayName</c>) used by an elevated
+    /// <c>Stop-Service</c> call. ProcessId 0 (reported by stopped services) is excluded.
+    ///
+    /// Multi-service-per-PID: the WMI <c>Name</c> map keeps the FIRST name encountered for a PID
+    /// (svchost can host many services, but standalone dev-port services are single — the first
+    /// is correct for the cases we care about).
+    ///
+    /// Never throws: any WMI failure (service unavailable, access denied) degrades to an empty set
+    /// and empty map, so detection simply falls back to the immediate-parent signal and the
+    /// "Stop service" action stays hidden.
     ///
     /// This method is live-only (requires a running WMI service). It is intentionally not
-    /// unit-tested; the pure walk logic lives in <see cref="IsServiceBacked"/>.
+    /// unit-tested; the pure walk logic lives in <see cref="TryFindServiceHost"/>.
     /// </summary>
-    internal static HashSet<int> QueryRunningServiceHostPids()
+    internal static (HashSet<int> Pids, Dictionary<int, string> Names) QueryRunningServiceHostsWithNames()
     {
-        var result = new HashSet<int>();
+        var pids = new HashSet<int>();
+        var names = new Dictionary<int, string>();
         try
         {
             using var searcher = new ManagementObjectSearcher(
                 "root\\cimv2",
-                "SELECT ProcessId FROM Win32_Service WHERE State = 'Running'");
+                "SELECT ProcessId, Name FROM Win32_Service WHERE State = 'Running'");
             using var collection = searcher.Get();
             foreach (ManagementObject obj in collection)
             {
                 try
                 {
                     var procId = Convert.ToInt32(obj["ProcessId"]);
-                    if (procId != 0) result.Add(procId);   // stopped services report ProcessId 0
+                    if (procId == 0) continue;             // stopped services report ProcessId 0
+                    pids.Add(procId);
+                    var name = obj["Name"] as string;
+                    if (!string.IsNullOrEmpty(name) && !names.ContainsKey(procId))
+                        names[procId] = name;              // keep-first on multi-service PID
                 }
                 catch { /* skip inaccessible row */ }
             }
         }
         catch { /* WMI unavailable, service stopped, access denied — return empty */ }
-        return result;
+        return (pids, names);
     }
+
+    /// <summary>
+    /// Deprecated shim — use <see cref="QueryRunningServiceHostsWithNames"/>, which also returns the
+    /// PID→service-name map. Kept so any stray positional caller still compiles; returns only the
+    /// host-PID set portion.
+    /// </summary>
+    [Obsolete("Use QueryRunningServiceHostsWithNames() which also returns the PID->service-name map.")]
+    internal static HashSet<int> QueryRunningServiceHostPids() =>
+        QueryRunningServiceHostsWithNames().Pids;
 }

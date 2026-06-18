@@ -12,7 +12,8 @@ public sealed record ProcessEvidence(
     DateTimeOffset? StartedAt,
     bool ParentAlive,
     bool IsService = false,
-    IReadOnlyList<AncestorInfo>? Ancestry = null);
+    IReadOnlyList<AncestorInfo>? Ancestry = null,
+    string? ServiceName = null);
 
 /// <summary>One node in a process's parent chain (parent, grandparent, …). <c>Alive</c> is false
 /// when the snapshot-time liveness lookup returned no start time (dead/inaccessible). <c>ExeDir</c>

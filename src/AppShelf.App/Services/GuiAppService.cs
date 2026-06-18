@@ -46,15 +46,54 @@ public sealed class GuiAppService : IDisposable
         return await _launcher.LaunchAsync(entry);
     }
 
-    /// <summary>Live status for the grid: Running if the port answers, Starting if we are
-    /// managing it but it is not up yet, otherwise Stopped.</summary>
+    /// <summary>Kill the orphan on <paramref name="port"/> and relaunch <paramref name="entry"/>.
+    /// Polls for the port to free (up to ~3 s) before relaunching so the warm-path in
+    /// <see cref="Launcher.LaunchAsync"/> does not reopen a zombie browser. When the kill fails,
+    /// returns immediately without relaunching.</summary>
+    public async Task<ReclaimResult> ReclaimAsync(AppEntry entry, int port)
+    {
+        var kill = KillPort(port);
+        if (!kill.Success)
+            return new ReclaimResult(kill, null);
+
+        // Clear any managed tracking for the owner (same door RestartAsync uses) so the relaunch
+        // can't hit ProcessManager.Start's "already running in this session" guard from a stale or
+        // live entry left over earlier this session. Stop is a safe no-op when the id isn't tracked
+        // (ProcessManager.Stop -> _running.TryRemove returns false).
+        _processes.Stop(entry.Id);
+
+        // Poll until the port is free (max ~3 s / 20 × 150 ms).
+        for (var i = 0; i < 20 && ProcessManager.IsPortInUse(port); i++)
+            await Task.Delay(150);
+
+        // The kill already succeeded — never let a relaunch exception bubble out as an unhandled
+        // async-void crash in the VM. Map any failure to a readable Error result the VM messages on.
+        LaunchResult launch;
+        try
+        {
+            launch = await _launcher.LaunchAsync(entry);
+        }
+        catch (Exception ex)
+        {
+            launch = new LaunchResult(LaunchStatus.Error, null, Array.Empty<string>(), ex.Message);
+        }
+        return new ReclaimResult(kill, launch);
+    }
+
+    /// <summary>Live status for the grid: owner-aware. If the port is not listening, Starting when we
+    /// are managing it (not up yet) else Stopped. If it is listening, Running only when the listener
+    /// is one of our managed processes (or the app is URL-only / has no port to check); a registered
+    /// port held by a foreign process is reported as PortInUse so the pre-flight conflict gate becomes
+    /// reachable from the card.</summary>
     public LaunchStatus StatusOf(AppEntry entry)
     {
-        if (ProcessManager.IsPortListening(entry.Url))
-            return LaunchStatus.Running;
-        if (_processes.IsManaged(entry.Id))
-            return LaunchStatus.Starting;
-        return LaunchStatus.Stopped;
+        bool listening = ProcessManager.IsPortListening(entry.Url);
+        if (!listening)
+            return _processes.IsManaged(entry.Id) ? LaunchStatus.Starting : LaunchStatus.Stopped;
+
+        // Listening: CheckPortConflict returns null when the listener is ours, or when there is no
+        // port to check (URL-only / port-less apps) — both keep their current Running behavior.
+        return CheckPortConflict(entry) is null ? LaunchStatus.Running : LaunchStatus.PortInUse;
     }
 
     public IReadOnlyList<string> LogTail(AppEntry entry) => _processes.GetLogTail(entry.Id);
@@ -129,6 +168,114 @@ public sealed class GuiAppService : IDisposable
     /// <summary>Kill whatever is listening on a port (its whole tree) and free it. Returns the
     /// outcome so the UI can surface the reason when a kill fails (e.g. a Windows service).</summary>
     public KillOutcome KillPort(int port) => ProcessManager.KillByPort(port);
+
+    /// <summary>Pre-flight: returns info about a foreign process holding the app's registered port,
+    /// or null when there is no conflict. Null when the entry has no port, is URL-only, nothing is
+    /// listening, or the listener is one of our own managed PIDs. Composes the existing
+    /// <see cref="PortProcessFinder.FindListenerPid"/> + <see cref="ProcessManager.ManagedPids"/>
+    /// primitives via the pure <see cref="PortConflict.IsConflict"/> decision.</summary>
+    public PortConflictInfo? CheckPortConflict(AppEntry entry)
+    {
+        if (entry.Port is not int port || entry.IsUrlOnly)
+            return null;
+
+        var pid = PortProcessFinder.FindListenerPid(port);
+        if (!PortConflict.IsConflict(pid, _processes.ManagedPids()))
+            return null;
+
+        string name;
+        try   { name = System.Diagnostics.Process.GetProcessById(pid!.Value).ProcessName; }
+        catch { name = "unknown"; }
+
+        return new PortConflictInfo(port, pid!.Value, name);
+    }
+
+    /// <summary>Injection guard for the service name that gets interpolated into the elevated
+    /// <c>Stop-Service</c> command. Allows ONLY <c>[A-Za-z0-9._\- ]</c> (alphanumeric, dot,
+    /// underscore, hyphen, space). Anything outside that set — in particular single quotes, which
+    /// could break out of the quoted <c>-Name '...'</c> argument — is rejected so we never spawn a
+    /// crafted PowerShell command. Windows SCM service names are restricted to a similar character
+    /// set in practice, so a legitimate service is never blocked.</summary>
+    internal static bool IsValidServiceName(string name) =>
+        !string.IsNullOrWhiteSpace(name) &&
+        System.Text.RegularExpressions.Regex.IsMatch(name, @"^[A-Za-z0-9._\- ]+$");
+
+    /// <summary>Stop a Windows service by SCM internal name via a per-action UAC-elevated
+    /// <c>Stop-Service</c>, then poll until <paramref name="port"/> is free. AppShelf itself stays
+    /// non-elevated. Never throws to the caller: a rejected name, a cancelled UAC prompt (Win32
+    /// 1223), a spawn failure, a non-zero exit, and a stopped-but-still-bound port all map to a
+    /// <see cref="ServiceStopOutcome"/> with a readable <see cref="ServiceStopOutcome.Reason"/>
+    /// (null on full success and on the quiet cancel path).</summary>
+    public async Task<ServiceStopOutcome> StopServiceElevatedAsync(string serviceName, int port)
+    {
+        if (!IsValidServiceName(serviceName))
+            return new ServiceStopOutcome(false, false, false,
+                $"Service name '{serviceName}' contains characters that cannot be passed safely. " +
+                "Stop it manually from an elevated terminal.");
+
+        var psi = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = "powershell",
+            UseShellExecute = true,
+            Verb = "runas",
+            WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+            Arguments = $"-NoProfile -NonInteractive -Command \"Stop-Service -Name '{serviceName}' -Force\""
+        };
+
+        System.Diagnostics.Process? proc;
+        try
+        {
+            proc = System.Diagnostics.Process.Start(psi);
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            // User cancelled the UAC elevation prompt — not an error.
+            return new ServiceStopOutcome(false, true, false, null);
+        }
+        catch (Exception ex)
+        {
+            return new ServiceStopOutcome(false, false, false,
+                $"Could not start the elevated Stop-Service process: {ex.Message}");
+        }
+
+        if (proc is null)
+            return new ServiceStopOutcome(false, false, false, "Process did not start.");
+
+        try
+        {
+            using var timeout = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(30));
+            try
+            {
+                await proc.WaitForExitAsync(timeout.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // The elevated process is still running after 30 s — kill its tree so it does not
+                // linger. The kill may itself throw if the process exited in the meantime.
+                try { proc.Kill(entireProcessTree: true); }
+                catch { /* already gone — nothing to clean up */ }
+
+                return new ServiceStopOutcome(true, false, false,
+                    "Stop-Service timed out after 30 seconds. The service may still be running.");
+            }
+
+            if (proc.ExitCode != 0)
+                return new ServiceStopOutcome(true, false, false,
+                    $"Stop-Service exited with code {proc.ExitCode}. The service may still be running.");
+        }
+        finally
+        {
+            proc.Dispose();
+        }
+
+        // Poll until the port is free (max ~3 s / 20 × 150 ms) — same pattern as ReclaimAsync.
+        for (var i = 0; i < 20 && ProcessManager.IsPortInUse(port); i++)
+            await Task.Delay(150);
+
+        bool portFreed = !ProcessManager.IsPortInUse(port);
+        return new ServiceStopOutcome(true, false, portFreed,
+            portFreed ? null : $"Service stopped but port {port} is still in use — it may take a moment to release.");
+    }
 
     /// <summary>Start members in the given (already role-ordered) sequence, waiting for each to
     /// come up before the next — backend before frontend. Skips members already running.</summary>

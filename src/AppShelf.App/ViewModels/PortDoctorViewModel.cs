@@ -49,7 +49,7 @@ public sealed class PortDoctorViewModel : ObservableObject
             Rows.Clear();
             var reports = await Task.Run(() => _service.ScanPorts().ToList());
             foreach (var report in reports)
-                Rows.Add(new PortRowViewModel(report, OnKill));
+                Rows.Add(new PortRowViewModel(report, OnKill, OnReclaim, OnStopService));
 
             OnPropertyChanged(nameof(IsEmpty));
             OnPropertyChanged(nameof(HasOrphans));
@@ -89,6 +89,98 @@ public sealed class PortDoctorViewModel : ObservableObject
         var outcome = _service.KillPort(row.Port);
         if (!outcome.Success)
             _dialogs.Info(BuildFailureMessage(row, outcome), $"Kill port {row.Port} failed");
+        Refresh();
+    }
+
+    private async void OnReclaim(PortRowViewModel row)
+    {
+        var entry = _service.LoadApps().FirstOrDefault(a => a.Id == row.OwnerAppId);
+        if (entry is null)
+        {
+            _dialogs.Info(
+                "The owning app could not be found in config. It may have been removed.",
+                "Reclaim failed");
+            return;
+        }
+
+        if (!_dialogs.Confirm(
+                $"Kill the orphan on port {row.Port} and relaunch {entry.Name}?",
+                "Reclaim & Relaunch"))
+            return;
+
+        var result = await _service.ReclaimAsync(entry, row.Port);
+
+        if (!result.Kill.Success)
+        {
+            _dialogs.Info(BuildFailureMessage(row, result.Kill), $"Kill port {row.Port} failed");
+        }
+        else if (result.Launch?.Status == AppShelf.Core.Models.LaunchStatus.Error)
+        {
+            var reason = result.Launch.Reason ?? "Unknown error.";
+            _dialogs.Info(
+                $"Port {row.Port} was freed, but {entry.Name} failed to start.\n\n{reason}",
+                "Relaunch failed");
+        }
+
+        Refresh();
+    }
+
+    private async void OnStopService(PortRowViewModel row)
+    {
+        var serviceName = row.ServiceName;
+        if (string.IsNullOrWhiteSpace(serviceName))
+        {
+            _dialogs.Info("No service name is available for this port.", "Stop service");
+            return;
+        }
+
+        // Reject names the authoritative guard would reject (control chars, quotes, etc.) before they
+        // reach the confirm prompt — so the dialog can't be garbled and we never show a name we then
+        // refuse to act on. GuiAppService.StopServiceElevatedAsync stays the real gate.
+        if (!GuiAppService.IsValidServiceName(serviceName))
+        {
+            _dialogs.Info("This service name can't be handled safely.", "Stop service");
+            return;
+        }
+
+        if (!_dialogs.Confirm(
+                $"Stop the Windows service '{serviceName}' to free port {row.Port}?\n\n" +
+                "You will see a UAC elevation prompt. AppShelf itself does not run as administrator.",
+                $"Stop service on port {row.Port}"))
+            return;
+
+        ServiceStopOutcome outcome;
+        try
+        {
+            outcome = await _service.StopServiceElevatedAsync(serviceName, row.Port);
+        }
+        catch
+        {
+            _dialogs.Info(
+                $"An unexpected error occurred while stopping {serviceName}.",
+                "Stop service failed");
+            Refresh();
+            return;
+        }
+
+        if (outcome.Cancelled)
+        {
+            // User declined UAC — treat as user choice, no dialog.
+        }
+        else if (!outcome.Started)
+        {
+            _dialogs.Info(
+                outcome.Reason ?? $"Could not start the Stop-Service process for '{serviceName}'.",
+                "Stop service failed");
+        }
+        else if (!outcome.PortFreed)
+        {
+            _dialogs.Info(
+                outcome.Reason ?? $"Service '{serviceName}' stopped but port {row.Port} is still occupied.",
+                $"Port {row.Port} not yet free");
+        }
+        // Started + PortFreed: silent success — the Refresh() call below updates the row.
+
         Refresh();
     }
 

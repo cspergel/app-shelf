@@ -10,10 +10,16 @@ namespace AppShelf.App.ViewModels;
 /// one place.</summary>
 public sealed class PortRowViewModel : ObservableObject
 {
-    public PortRowViewModel(PortReport report, Action<PortRowViewModel> onKill)
+    public PortRowViewModel(
+        PortReport report,
+        Action<PortRowViewModel> onKill,
+        Action<PortRowViewModel>? onReclaim = null,
+        Action<PortRowViewModel>? onStopService = null)
     {
         Report = report;
         KillCommand = new RelayCommand(() => onKill(this));
+        ReclaimCommand = new RelayCommand(() => onReclaim?.Invoke(this));
+        StopServiceCommand = new RelayCommand(() => onStopService?.Invoke(this));
         ToggleExpandCommand = new RelayCommand(() => IsExpanded = !IsExpanded);
         CopyAncestryCommand = new RelayCommand(CopyAncestry);
     }
@@ -132,7 +138,28 @@ public sealed class PortRowViewModel : ObservableObject
     public bool IsService => Report.Evidence.IsService;
     public string ServiceBadge => Report.Evidence.IsService ? "⚙ Service" : "";
 
+    /// <summary>The SCM internal service name (for an elevated Stop-Service), or null when not
+    /// service-backed / unresolved.</summary>
+    public string? ServiceName => Report.Evidence.ServiceName;
+
+    /// <summary>True only when this row is a Windows service AND we resolved its name — gates the
+    /// "Stop service" button so we never offer it without a name to act on.</summary>
+    public bool CanStopService =>
+        Report.Evidence.IsService && !string.IsNullOrEmpty(Report.Evidence.ServiceName);
+
     public ICommand KillCommand { get; }
+
+    public ICommand ReclaimCommand { get; }
+
+    public ICommand StopServiceCommand { get; }
+
+    public string? OwnerAppId => Report.OwnerAppId;
+
+    /// <summary>Reclaim is offered only for a registered app whose launcher is dead (the orphan
+    /// case) — never for Managed, Registered (parent alive), or Unknown rows, and never when the
+    /// port could not be mapped back to a registered app.</summary>
+    public bool CanReclaim =>
+        Report.Tier == PortTier.LikelyOrphaned && Report.OwnerAppId is not null;
 
     /// <summary>Full evidence shown in the confirm dialog before a kill.</summary>
     public string EvidenceText =>
