@@ -231,13 +231,23 @@ public sealed class ProcessManager : IDisposable
                 reason = CleanReason(stdout);
             if (string.IsNullOrEmpty(reason))
                 reason = $"taskkill exited with code {p.ExitCode}.";
-            return KillOutcome.Fail(reason);
+
+            // Classify "Access is denied" (Win32 error 5) so the GUI can show a friendly,
+            // service/elevation-aware message instead of taskkill's raw multi-PID dump.
+            var accessDenied = IndicatesAccessDenied(stderr) || IndicatesAccessDenied(stdout);
+            return KillOutcome.Fail(reason, accessDenied);
         }
         catch (Exception ex)
         {
             return KillOutcome.Fail(ex.Message);
         }
     }
+
+    /// <summary>True when taskkill output reports an access-denied refusal (Win32 error 5),
+    /// e.g. a Windows service or an elevated/protected process the user can't kill unelevated.</summary>
+    private static bool IndicatesAccessDenied(string? raw) =>
+        !string.IsNullOrEmpty(raw) &&
+        raw.Contains("access is denied", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Collapses taskkill's multi-line output into a single trimmed reason line.</summary>
     private static string CleanReason(string? raw)

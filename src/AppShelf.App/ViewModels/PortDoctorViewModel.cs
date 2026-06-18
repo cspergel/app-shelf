@@ -11,6 +11,8 @@ public sealed class PortDoctorViewModel : ObservableObject
 {
     private readonly GuiAppService _service;
     private readonly IAppDialogs _dialogs;
+    private bool _refreshing;
+    private bool _refreshPending;
 
     public PortDoctorViewModel(GuiAppService service, IAppDialogs dialogs)
     {
@@ -31,14 +33,47 @@ public sealed class PortDoctorViewModel : ObservableObject
     public bool IsEmpty => Rows.Count == 0;
     public bool HasOrphans => Rows.Any(r => r.IsLikelyOrphaned);
 
-    public void Refresh()
+    public async void Refresh()
     {
-        Rows.Clear();
-        foreach (var report in _service.ScanPorts())
-            Rows.Add(new PortRowViewModel(report, OnKill));
+        if (_refreshing)
+        {
+            // A scan is already in flight — mark that another one is needed (e.g. after a kill)
+            // so the list is consistent once the current scan finishes.
+            _refreshPending = true;
+            return;
+        }
+        _refreshing = true;
+        _refreshPending = false;
+        try
+        {
+            Rows.Clear();
+            var reports = await Task.Run(() => _service.ScanPorts().ToList());
+            foreach (var report in reports)
+                Rows.Add(new PortRowViewModel(report, OnKill));
 
-        OnPropertyChanged(nameof(IsEmpty));
-        OnPropertyChanged(nameof(HasOrphans));
+            OnPropertyChanged(nameof(IsEmpty));
+            OnPropertyChanged(nameof(HasOrphans));
+            // The async scan resumes on the UI context, so the requery runs on the dispatcher.
+            // RelayCommand has no RaiseCanExecuteChanged, so nudge CommandManager to re-evaluate
+            // KillAllOrphansCommand.CanExecute promptly now that Rows/HasOrphans changed.
+            System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+        }
+        catch
+        {
+            // ScanPorts enumerates TCP tables and WMI — failures are degraded silently to an
+            // empty list rather than crashing the app via an unhandled async-void exception.
+            Rows.Clear();
+            OnPropertyChanged(nameof(IsEmpty));
+            OnPropertyChanged(nameof(HasOrphans));
+        }
+        finally
+        {
+            _refreshing = false;
+            // If a second Refresh() was requested while we were scanning (e.g. from OnKill),
+            // run it now so the list reflects the post-kill state.
+            if (_refreshPending)
+                Refresh();
+        }
     }
 
     private void OnKill(PortRowViewModel row)
@@ -53,13 +88,24 @@ public sealed class PortDoctorViewModel : ObservableObject
 
         var outcome = _service.KillPort(row.Port);
         if (!outcome.Success)
-            _dialogs.Info($"Could not free port {row.Port}: {outcome.Reason}" +
-                          (row.IsService
-                              ? "\n\nThis is a Windows service — stop it with an elevated 'Stop-Service', " +
-                                "or run AppShelf as administrator."
-                              : ""),
-                          $"Kill port {row.Port} failed");
+            _dialogs.Info(BuildFailureMessage(row, outcome), $"Kill port {row.Port} failed");
         Refresh();
+    }
+
+    /// <summary>Composes a clean, human one-paragraph message from the structured outcome and the
+    /// row's listener info — never the raw taskkill PID dump (spec: "readable errors only").</summary>
+    private static string BuildFailureMessage(PortRowViewModel row, AppShelf.Core.Process.KillOutcome outcome)
+    {
+        if (outcome.AccessDenied && row.IsService)
+            return $"Couldn't free port {row.Port}: {row.Process} (PID {row.Pid}) is a Windows " +
+                   "service and can't be stopped without administrator rights.\n\n" +
+                   "Stop it from an elevated terminal with 'Stop-Service', or run AppShelf as administrator.";
+
+        if (outcome.AccessDenied)
+            return $"Couldn't free port {row.Port}: access denied stopping {row.Process} (PID {row.Pid}). " +
+                   "It may be a protected or elevated process — try running AppShelf as administrator.";
+
+        return $"Couldn't free port {row.Port}: {row.Process} (PID {row.Pid}) could not be stopped.";
     }
 
     private void KillAllOrphans()
