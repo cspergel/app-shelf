@@ -2,9 +2,9 @@
 
   <!-- Shared metadata for every project in the solution. Bump <Version> per release. -->
   <PropertyGroup>
-    <Version>0.3.0</Version>
-    <AssemblyVersion>0.3.0.0</AssemblyVersion>
-    <FileVersion>0.3.0.0</FileVersion>
+    <Version>0.4.0</Version>
+    <AssemblyVersion>0.4.0.0</AssemblyVersion>
+    <FileVersion>0.4.0.0</FileVersion>
     <Product>AppShelf</Product>
     <Company>AppShelf</Company>
   </PropertyGroup>
