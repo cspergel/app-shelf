@@ -22,6 +22,10 @@ public sealed class AppCardViewModel : ObservableObject
     private bool _canRunSetup;
     private bool _isSettingUp;
 
+    /// <summary>Per-card crash-watcher miss counter. Internal state owned and mutated exclusively
+    /// by <c>MainViewModel.RefreshStatuses</c>'s dead-man's-switch loop.</summary>
+    internal int _crashMisses;
+
     public AppCardViewModel(
         AppEntry entry,
         GuiAppService service,
@@ -106,14 +110,14 @@ public sealed class AppCardViewModel : ObservableObject
     public string Logs
     {
         get => _logs;
-        private set => SetField(ref _logs, value);
+        internal set => SetField(ref _logs, value);
     }
 
     /// <summary>Plain-English reason the last launch was blocked (pre-flight), or "" when none.</summary>
     public string Reason
     {
         get => _reason;
-        private set => SetField(ref _reason, value);
+        internal set => SetField(ref _reason, value);
     }
 
     /// <summary>True when the blocking reason is plausibly fixable by running the install command.</summary>

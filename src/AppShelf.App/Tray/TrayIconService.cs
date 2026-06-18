@@ -33,6 +33,10 @@ public sealed class TrayIconService : IDisposable
         _icon.DoubleClick += (_, _) => open();
     }
 
+    /// <summary>Show a tray balloon notification for 5 seconds with a Warning icon.</summary>
+    public void ShowBalloon(string title, string text) =>
+        _icon.ShowBalloonTip(5000, title, text, Forms.ToolTipIcon.Warning);
+
     /// <summary>Loads the embedded brand icon at the tray's preferred small size, falling back to
     /// the system icon if anything goes wrong.</summary>
     private static Icon? LoadAppIcon()

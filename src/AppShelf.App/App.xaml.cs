@@ -58,7 +58,20 @@ public partial class App : Application
         {
             _service = new GuiAppService();
             _dialogs = new DialogService(_service);
-            var viewModel = new MainViewModel(_service, _dialogs, ShowPorts);
+
+            // Construct the tray first so its ShowBalloon can be handed to the MainViewModel's
+            // crash watcher. The tray ctor only captures the menu/double-click action delegates
+            // (instance methods on App) — it does not touch _window, _spotlight, or the view model
+            // at construction time, so building it ahead of them is safe.
+            _tray = new TrayIconService(
+                open: ShowWindow,
+                search: ShowSpotlight,
+                hotkey: ShowHotkeySettings,
+                add: AddFromTray,
+                ports: ShowPorts,
+                quit: QuitApp);
+
+            var viewModel = new MainViewModel(_service, _dialogs, ShowPorts, _tray.ShowBalloon);
 
             _window = new MainWindow(viewModel);
             MainWindow = _window; // so modal dialogs can anchor to it
@@ -70,14 +83,6 @@ public partial class App : Application
             new WindowInteropHelper(_spotlight).EnsureHandle();
 
             _hotkey = new HotkeyService(_spotlight, ToggleSpotlight, _service.GetHotkey());
-
-            _tray = new TrayIconService(
-                open: ShowWindow,
-                search: ShowSpotlight,
-                hotkey: ShowHotkeySettings,
-                add: AddFromTray,
-                ports: ShowPorts,
-                quit: QuitApp);
 
             // Show on launch (so `appshelf open` produces a window); close hides back to the tray.
             _window.Show();

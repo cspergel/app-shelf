@@ -90,6 +90,13 @@ public sealed class ProcessManager : IDisposable
     public bool IsManaged(string id) =>
         _running.TryGetValue(id, out var r) && !r.HasExited;
 
+    /// <summary>True when this manager is tracking an entry for <paramref name="id"/> whose underlying
+    /// process has already exited — meaning the exit was NOT driven by the AppShelf Stop path
+    /// (which calls TryRemove before the process dies). False for any app that was never
+    /// launched this session, was cleanly stopped, or is still alive.</summary>
+    public bool IsManagedAndExited(string id) =>
+        _running.TryGetValue(id, out var r) && r.HasExited;
+
     /// <summary>
     /// Live OS process ids of the dev servers this manager launched (skipping any that have
     /// exited). Used by the Port Doctor to mark ports we own as <see cref="PortTier.Managed"/>.

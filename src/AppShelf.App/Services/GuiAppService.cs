@@ -98,6 +98,11 @@ public sealed class GuiAppService : IDisposable
 
     public IReadOnlyList<string> LogTail(AppEntry entry) => _processes.GetLogTail(entry.Id);
 
+    /// <summary>True when the entry was launched this session and its process has since exited
+    /// without going through the AppShelf Stop path. Used by the per-card crash watcher.</summary>
+    public bool DidManagedAppExit(AppEntry entry) =>
+        _processes.IsManagedAndExited(entry.Id);
+
     public AppEntry Add(AppEntry entry) => _store.AddApp(entry);
     public void Update(AppEntry entry) => _store.UpdateApp(entry);
 

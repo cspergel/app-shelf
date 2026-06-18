@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Windows.Input;
 using AppShelf.App.Services;
 using AppShelf.Core.Models;
+using AppShelf.Core.Process;
 
 namespace AppShelf.App.ViewModels;
 
@@ -10,8 +11,13 @@ namespace AppShelf.App.ViewModels;
 /// (spec §5.2, Slice 3 grouping).</summary>
 public sealed class MainViewModel : ObservableObject
 {
+    /// <summary>Consecutive missed ticks (~2s each) a managed app must be exited-but-tracked before
+    /// the crash watcher fires — debounces single-tick timing glitches (~4s total).</summary>
+    private const int CrashThreshold = 2;
+
     private readonly GuiAppService _service;
     private readonly IAppDialogs _dialogs;
+    private readonly Action<string, string>? _notify;
 
     // All standalone (ungrouped) cards and all group cards, unfiltered.
     private readonly List<AppCardViewModel> _standalones = new();
@@ -20,10 +26,11 @@ public sealed class MainViewModel : ObservableObject
     private string _searchText = "";
     private bool _favoritesOnly;
 
-    public MainViewModel(GuiAppService service, IAppDialogs dialogs, Action? showPorts = null)
+    public MainViewModel(GuiAppService service, IAppDialogs dialogs, Action? showPorts = null, Action<string, string>? notify = null)
     {
         _service = service;
         _dialogs = dialogs;
+        _notify = notify;
 
         AddCommand = new RelayCommand(AddApp);
         RefreshCommand = new RelayCommand(LoadAll);
@@ -121,6 +128,40 @@ public sealed class MainViewModel : ObservableObject
 
             foreach (var group in _groups)
                 group.RecomputeAggregate();
+
+            // --- Crash watcher: detect managed apps whose process exited unexpectedly ---
+            // Runs on the UI thread (after the await). DidManagedAppExit touches only the
+            // _running ConcurrentDictionary + a try-wrapped HasExited — no port probe, no
+            // blocking I/O — so it is cheap and safe here.
+            for (int i = 0; i < cards.Count; i++)
+            {
+                var card = cards[i];
+                var entry = entries[i];
+
+                bool managedAndExited = _service.DidManagedAppExit(entry);
+                var step = CrashWatch.Step(managedAndExited, card._crashMisses, CrashThreshold);
+                card._crashMisses = step.Misses;
+
+                if (!step.Alert)
+                    continue;
+
+                // Exactly one alert per crash event. Flip the card to Error with a readable reason.
+                var portText = entry.Port is int p ? $":{p}" : "";
+                card.ApplyStatus(LaunchStatus.Error);
+                card.Reason = $"{entry.Name} stopped unexpectedly{portText}.";
+
+                // Surface the log tail so the panel auto-opens (mirrors ApplyLaunchResult).
+                var tail = _service.LogTail(entry);
+                card.ShowLogs = true;
+                card.Logs = tail.Count > 0
+                    ? string.Join(Environment.NewLine, tail)
+                    : "(process exited; no captured output)";
+
+                // Tray balloon.
+                _notify?.Invoke(
+                    $"{entry.Name} crashed",
+                    $"Stopped unexpectedly{portText} — open AppShelf to restart.");
+            }
         }
         finally
         {
