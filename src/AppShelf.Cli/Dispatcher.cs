@@ -29,7 +29,7 @@ public static class Dispatcher
                 "rm" or "remove" => RemoveCommand.Run(store, rest),
                 "port" => PortCommand.RunPort(store, rest),
                 "ports" => PortCommand.RunPorts(store, rest),
-                "doctor" => DoctorCommand.Run(store, rest),
+                "doctor" => await DoctorCommand.RunAsync(store, rest),
                 "open" => OpenCommand.Run(),
                 "help" or "--help" or "-h" => PrintUsage(),
                 _ => Unknown(command),
