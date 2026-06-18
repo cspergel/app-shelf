@@ -1,5 +1,6 @@
 using System.Windows.Input;
 using AppShelf.App.Services;
+using AppShelf.Core.Launch;
 using AppShelf.Core.Models;
 
 namespace AppShelf.App.ViewModels;
@@ -12,6 +13,7 @@ public sealed class AppCardViewModel : ObservableObject
     private readonly Action<AppCardViewModel> _editRequested;
     private readonly Action<AppCardViewModel> _removeRequested;
     private readonly Action<AppCardViewModel> _favoriteToggled;
+    private readonly IAppDialogs _dialogs;
 
     private LaunchStatus _status;
     private bool _showLogs;
@@ -23,12 +25,14 @@ public sealed class AppCardViewModel : ObservableObject
     public AppCardViewModel(
         AppEntry entry,
         GuiAppService service,
+        IAppDialogs dialogs,
         Action<AppCardViewModel> editRequested,
         Action<AppCardViewModel> removeRequested,
         Action<AppCardViewModel> favoriteToggled)
     {
         Entry = entry;
         _service = service;
+        _dialogs = dialogs;
         _editRequested = editRequested;
         _removeRequested = removeRequested;
         _favoriteToggled = favoriteToggled;
@@ -180,8 +184,51 @@ public sealed class AppCardViewModel : ObservableObject
 
     private async Task LaunchAsync()
     {
+        // Pre-gate: a foreign process holds the registered port. The affirmative action RECLAIMs —
+        // stop that process and launch this app — rather than warm-opening the browser to whatever
+        // currently holds the port.
+        var conflict = _service.CheckPortConflict(Entry);
+        if (conflict != null)
+        {
+            bool proceed = _dialogs.Confirm(
+                $"Port {conflict.Port} is in use by {conflict.ProcessName} (PID {conflict.Pid}).\n\n" +
+                $"Reclaim it — stop that process and start {Entry.Name}?\n\n" +
+                "(No leaves it alone; you can also free it from the Ports panel.)",
+                "Port in use");
+
+            if (!proceed)
+            {
+                Status = LaunchStatus.PortInUse;
+                return;
+            }
+
+            // User chose Yes — reclaim: kill the port holder, then launch this app.
+            Status = LaunchStatus.Starting;
+            var reclaim = await _service.ReclaimAsync(Entry, conflict.Port);
+
+            if (!reclaim.Kill.Success)
+            {
+                // The conflicting process couldn't be stopped (e.g. a Windows service / access
+                // denied). Surface the reason and leave the port flagged — do NOT launch.
+                _dialogs.Info($"Couldn't free port {conflict.Port}: {reclaim.Kill.Reason}", "Reclaim failed");
+                Status = LaunchStatus.PortInUse;
+                return;
+            }
+
+            ApplyLaunchResult(reclaim.Launch ?? new LaunchResult(LaunchStatus.Stopped, null, Array.Empty<string>()));
+            return;
+        }
+
         Status = LaunchStatus.Starting;
         var result = await _service.LaunchAsync(Entry);
+        ApplyLaunchResult(result);
+    }
+
+    /// <summary>Apply a launch outcome to card state: status, last-launched stamp, the plain-English
+    /// reason / "Run setup" affordance, and the error log panel. Shared by the normal launch path
+    /// and the reclaim-on-conflict path so both behave identically.</summary>
+    private void ApplyLaunchResult(LaunchResult result)
+    {
         Status = result.Status;
         OnPropertyChanged(nameof(LastLaunchedText));
 

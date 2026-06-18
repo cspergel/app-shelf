@@ -92,7 +92,7 @@ public sealed class MainViewModel : ObservableObject
     }
 
     private AppCardViewModel MakeCard(AppEntry entry) =>
-        new(entry, _service, OnEdit, OnRemove, OnFavoriteToggled);
+        new(entry, _service, _dialogs, OnEdit, OnRemove, OnFavoriteToggled);
 
     private bool _refreshing;
 
