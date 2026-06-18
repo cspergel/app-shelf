@@ -39,6 +39,64 @@
                   RowBackground="{StaticResource SurfaceCard}"
                   AlternatingRowBackground="{StaticResource SurfaceElevated}"
                   HorizontalGridLinesBrush="{StaticResource BorderHairline}" SelectionMode="Single">
+            <DataGrid.RowDetailsTemplate>
+                <DataTemplate>
+                    <Border Background="{StaticResource SurfaceWindow}"
+                            BorderBrush="{StaticResource BorderHairline}"
+                            BorderThickness="0,1,0,1"
+                            Padding="16,8">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <!-- Header bar: label + Copy button — always visible -->
+                                <RowDefinition Height="Auto"/>
+                                <!-- Scrollable ancestry chain — capped height -->
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- Header bar: "Ancestry" label + pinned Copy button -->
+                            <Grid Grid.Row="0" Margin="0,0,0,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0"
+                                           Text="Ancestry"
+                                           Foreground="{StaticResource TextFaint}"
+                                           FontSize="10"
+                                           VerticalAlignment="Center"
+                                           FontFamily="{StaticResource MonoFont}"/>
+                                <Button Grid.Column="1"
+                                        Content="{Binding CopyLabel}"
+                                        Style="{StaticResource GhostButton}"
+                                        FontSize="11"
+                                        Padding="8,2"
+                                        HorizontalAlignment="Right"
+                                        Command="{Binding CopyAncestryCommand}"
+                                        ToolTip="Copy the full ancestry chain to the clipboard"/>
+                            </Grid>
+
+                            <!-- Height-capped scrollable ancestry chain -->
+                            <ScrollViewer Grid.Row="1"
+                                          MaxHeight="200"
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled"
+                                          PreviewMouseWheel="AncestryScrollViewer_PreviewMouseWheel">
+                                <!-- Selectable, read-only chain (partial-copy works) -->
+                                <TextBox Text="{Binding AncestryText, Mode=OneWay}"
+                                         IsReadOnly="True"
+                                         IsReadOnlyCaretVisible="False"
+                                         BorderThickness="0"
+                                         Background="Transparent"
+                                         Foreground="{StaticResource TextSecondary}"
+                                         FontFamily="{StaticResource MonoFont}"
+                                         FontSize="11"
+                                         TextWrapping="Wrap"
+                                         Padding="0"/>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </DataGrid.RowDetailsTemplate>
             <DataGrid.ColumnHeaderStyle>
                 <Style TargetType="{x:Type DataGridColumnHeader}">
                     <Setter Property="Background" Value="{StaticResource SurfaceWindow}"/>
@@ -48,6 +106,12 @@
                     <Setter Property="BorderThickness" Value="0"/>
                 </Style>
             </DataGrid.ColumnHeaderStyle>
+            <DataGrid.RowStyle>
+                <Style TargetType="{x:Type DataGridRow}">
+                    <Setter Property="DetailsVisibility"
+                            Value="{Binding IsExpanded, Converter={StaticResource BoolToVis}}"/>
+                </Style>
+            </DataGrid.RowStyle>
             <DataGrid.CellStyle>
                 <Style TargetType="{x:Type DataGridCell}">
                     <Setter Property="Background" Value="Transparent"/>
@@ -61,6 +125,18 @@
                 </Style>
             </DataGrid.CellStyle>
             <DataGrid.Columns>
+                <DataGridTemplateColumn Header="" Width="28" CanUserResize="False" CanUserSort="False">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Button Content="{Binding ExpandLabel}"
+                                    Style="{StaticResource GhostButton}"
+                                    FontSize="10"
+                                    Padding="2,0"
+                                    Command="{Binding ToggleExpandCommand}"
+                                    ToolTip="Show/hide process ancestry"/>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTextColumn Header="Port" Binding="{Binding Port}" Width="60"/>
                 <DataGridTextColumn Header="Process" Binding="{Binding Process}" Width="150"/>
                 <DataGridTextColumn Header="PID" Binding="{Binding Pid}" Width="70"/>

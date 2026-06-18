@@ -8,4 +8,13 @@
     <!-- Core is a pure library: no UI, no Console. Windows-targeted only for Win32 P/Invoke (Job Objects). -->
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="System.Management" Version="8.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Exposes internal WalkAncestry / MaxAncestryDepth to the test project (pure-walk unit tests). -->
+    <InternalsVisibleTo Include="AppShelf.Core.Tests" />
+  </ItemGroup>
+
 </Project>
