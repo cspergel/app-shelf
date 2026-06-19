@@ -1,41 +1,91 @@
 import { cn } from "@/lib/utils";
 import type { LaunchStatus } from "@/lib/types";
 
-const STATUS_META: Record<
-  LaunchStatus,
-  { label: string; dot: string; text: string }
-> = {
-  Running: { label: "Running", dot: "bg-status-running", text: "text-status-running" },
-  Starting: { label: "Starting", dot: "bg-status-starting", text: "text-status-starting" },
-  Error: { label: "Error", dot: "bg-status-error", text: "text-status-error" },
-  PortInUse: { label: "Port in use", dot: "bg-status-error", text: "text-status-error" },
-  Stopped: { label: "Stopped", dot: "bg-status-stopped", text: "text-text-faint" },
+export interface StatusMeta {
+  label: string;
+  labelLong: string;
+  dotClass: string;
+  textClass: string;
+  railClass: string;
+}
+
+const STATUS_META: Record<LaunchStatus, StatusMeta> = {
+  Running: {
+    label: "Running",
+    labelLong: "Running",
+    dotClass: "bg-status-running",
+    textClass: "text-status-running",
+    railClass: "bg-status-running",
+  },
+  Starting: {
+    label: "Starting",
+    labelLong: "Starting…",
+    dotClass: "bg-status-starting",
+    textClass: "text-status-starting",
+    railClass: "bg-status-starting",
+  },
+  Error: {
+    label: "Error",
+    labelLong: "Error",
+    dotClass: "bg-status-error",
+    textClass: "text-status-error",
+    railClass: "bg-status-error",
+  },
+  PortInUse: {
+    label: "Port in use",
+    labelLong: "Port in use",
+    dotClass: "bg-status-port",
+    textClass: "text-status-error",
+    railClass: "bg-status-error",
+  },
+  StoppedUnexpectedly: {
+    label: "Crashed",
+    labelLong: "Stopped unexpectedly",
+    dotClass: "bg-status-crash",
+    textClass: "text-status-crash",
+    railClass: "bg-status-crash",
+  },
+  Stopped: {
+    label: "Stopped",
+    labelLong: "Stopped",
+    dotClass: "bg-status-stopped",
+    textClass: "text-text-faint",
+    railClass: "bg-status-stopped",
+  },
 };
 
-export function statusMeta(status: LaunchStatus) {
+export function statusMeta(status: LaunchStatus): StatusMeta {
   return STATUS_META[status] ?? STATUS_META.Stopped;
 }
 
-export function StatusDot({ status }: { status: LaunchStatus }) {
+/** 6 px solid dot — no outer halo. Starting pulses opacity. Running breathes scale. */
+export function StatusDot({ status, className }: { status: LaunchStatus; className?: string }) {
   const meta = statusMeta(status);
   return (
-    <span className="relative flex h-[7px] w-[7px]">
-      {status === "Running" && (
-        <span
-          className={cn(
-            "absolute inline-flex h-full w-full rounded-full opacity-40",
-            meta.dot,
-            "animate-ping",
-          )}
-        />
+    <span
+      className={cn(
+        "inline-block h-[6px] w-[6px] rounded-full flex-shrink-0",
+        meta.dotClass,
+        status === "Starting" && "animate-pulse-dot",
+        status === "Running" && "animate-breathe",
+        className,
       )}
-      <span
-        className={cn(
-          "relative inline-flex h-[7px] w-[7px] rounded-full",
-          meta.dot,
-          status === "Starting" && "animate-pulse-dot",
-        )}
-      />
-    </span>
+    />
+  );
+}
+
+/** Full-height left rail — the primary structural status signal on a card. */
+export function StatusRail({ status, className }: { status: LaunchStatus; className?: string }) {
+  const meta = statusMeta(status);
+  return (
+    <span
+      className={cn(
+        "absolute left-0 top-0 bottom-0 w-[3px] rounded-l-card animate-rail-grow",
+        meta.railClass,
+        // Dim the rail for inactive states so it doesn't compete
+        (status === "Stopped") && "opacity-25",
+        className,
+      )}
+    />
   );
 }

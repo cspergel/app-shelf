@@ -6,7 +6,8 @@ export type LaunchStatus =
   | "Starting"
   | "Running"
   | "Error"
-  | "PortInUse";
+  | "PortInUse"
+  | "StoppedUnexpectedly";
 
 /** One row in the card grid: an AppEntry projection + its live status. */
 export interface AppView {
@@ -19,4 +20,5 @@ export interface AppView {
   role: string;
   port: number | null;
   status: LaunchStatus;
+  tags?: string[];
 }

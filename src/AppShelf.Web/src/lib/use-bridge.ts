@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke, hasBridge } from "./bridge";
+import { getMockApps, mockLaunch, mockStop } from "./mock-data";
 import type { AppView } from "./types";
 
 const POLL_MS = 2000;
@@ -14,30 +15,33 @@ interface BridgeState {
 
 /**
  * Loads apps via the C# bridge and polls live status every ~2s.
- * Exposes launch/stop actions that optimistically nudge status then refresh.
+ * When window.chrome.webview is absent (plain browser / dev / screenshot),
+ * falls back to realistic mock data and no-op actions with optimistic state.
  */
 export function useBridge() {
+  const bridge = hasBridge();
+
   const [state, setState] = useState<BridgeState>({
-    apps: [],
-    loading: true,
+    apps: bridge ? [] : getMockApps(),
+    loading: bridge,
     error: null,
-    connected: hasBridge(),
+    connected: bridge,
   });
 
-  // Keep a ref so the poll closure always reads the latest apps without
-  // re-subscribing the interval.
   const mountedRef = useRef(true);
 
   const refresh = useCallback(async () => {
+    if (!bridge) {
+      // Mock path: re-read optimistic mock state on every poll tick
+      if (mountedRef.current) {
+        setState((s) => ({ ...s, apps: getMockApps(), loading: false }));
+      }
+      return;
+    }
     try {
       const apps = await invoke<AppView[]>("listApps");
       if (!mountedRef.current) return;
-      setState((s) => ({
-        ...s,
-        apps: apps ?? [],
-        loading: false,
-        error: null,
-      }));
+      setState((s) => ({ ...s, apps: apps ?? [], loading: false, error: null }));
     } catch (e) {
       if (!mountedRef.current) return;
       setState((s) => ({
@@ -46,14 +50,10 @@ export function useBridge() {
         error: e instanceof Error ? e.message : String(e),
       }));
     }
-  }, []);
+  }, [bridge]);
 
   useEffect(() => {
     mountedRef.current = true;
-    if (!hasBridge()) {
-      setState((s) => ({ ...s, loading: false, connected: false }));
-      return;
-    }
     void refresh();
     const id = window.setInterval(() => void refresh(), POLL_MS);
     return () => {
@@ -72,6 +72,10 @@ export function useBridge() {
   const launch = useCallback(
     async (id: string) => {
       setStatus(id, "Starting");
+      if (!bridge) {
+        mockLaunch(id);
+        return;
+      }
       try {
         await invoke("launch", { id });
       } catch (e) {
@@ -83,11 +87,19 @@ export function useBridge() {
         void refresh();
       }
     },
-    [refresh, setStatus],
+    [bridge, refresh, setStatus],
   );
 
   const stop = useCallback(
     async (id: string) => {
+      if (!bridge) {
+        mockStop(id);
+        setState((s) => ({
+          ...s,
+          apps: s.apps.map((a) => (a.id === id ? { ...a, status: "Stopped" } : a)),
+        }));
+        return;
+      }
       try {
         await invoke("stop", { id });
       } catch (e) {
@@ -99,7 +111,7 @@ export function useBridge() {
         void refresh();
       }
     },
-    [refresh],
+    [bridge, refresh],
   );
 
   return { ...state, refresh, launch, stop };
