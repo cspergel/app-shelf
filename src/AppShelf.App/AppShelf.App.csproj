@@ -4,6 +4,11 @@
     <ProjectReference Include="..\AppShelf.Core\AppShelf.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Web UI host (spike): React/Tailwind/shadcn served into a WebView2 control. -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3124.44" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
@@ -16,6 +21,8 @@
     <AssemblyName>AppShelf</AssemblyName>
     <RootNamespace>AppShelf.App</RootNamespace>
     <ApplicationIcon>Resources\appshelf.ico</ApplicationIcon>
+    <!-- Static WebView2 loader keeps single-file publish working later. -->
+    <WebView2LoaderPreference>Static</WebView2LoaderPreference>
   </PropertyGroup>
 
   <ItemGroup>

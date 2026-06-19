@@ -1,27 +1,62 @@
 using System.ComponentModel;
 using System.Windows;
-using System.Windows.Threading;
+using AppShelf.App.Services;
 using AppShelf.App.ViewModels;
+using AppShelf.App.Web;
+using Microsoft.Web.WebView2.Core;
 
 namespace AppShelf.App;
 
 public partial class MainWindow : Window
 {
     private readonly MainViewModel _viewModel;
-    private readonly DispatcherTimer _statusTimer;
+    private readonly GuiAppService _service;
+    private AppShelfBridge? _bridge;
+
+    // Dev server the web UI is served from in DEBUG (see vite.config.ts → port 5199).
+    private const string DevServerUrl = "http://localhost:5199";
 
     /// <summary>When false, closing the window hides it to the tray instead of exiting (spec §5.1).</summary>
     public bool AllowClose { get; set; }
 
-    public MainWindow(MainViewModel viewModel)
+    public MainWindow(MainViewModel viewModel, GuiAppService service)
     {
         InitializeComponent();
         _viewModel = viewModel;
+        _service = service;
         DataContext = viewModel;
 
-        _statusTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
-        _statusTimer.Tick += (_, _) => _viewModel.RefreshStatuses();
-        _statusTimer.Start();
+        // Spike: status polling now lives in the React side (useBridge, ~2s). The old
+        // DispatcherTimer that drove the WPF card grid is no longer needed.
+        Loaded += async (_, _) =>
+        {
+            try { await WebView.EnsureCoreWebView2Async(); }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"The web UI host (WebView2) could not start:\n\n{ex.Message}\n\n" +
+                    "Ensure the WebView2 Runtime is installed.",
+                    "AppShelf", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        };
+    }
+
+    private void WebView_OnInitializationCompleted(object? sender, CoreWebView2InitializationCompletedEventArgs e)
+    {
+        if (!e.IsSuccess || WebView.CoreWebView2 is null)
+            return;
+
+        // Wire the JS↔C# bridge before navigating so the page can call into Core immediately.
+        _bridge = new AppShelfBridge(WebView, _service);
+
+#if DEBUG
+        WebView.CoreWebView2.Navigate(DevServerUrl);
+#else
+        // TODO (post-spike): serve the built web assets from disk/embedded resources via
+        // SetVirtualHostNameToFolderMapping and navigate to the virtual host, so RELEASE
+        // builds don't depend on a running Vite dev server.
+        WebView.CoreWebView2.Navigate(DevServerUrl);
+#endif
     }
 
     protected override void OnClosing(CancelEventArgs e)
@@ -34,25 +69,15 @@ public partial class MainWindow : Window
         base.OnClosing(e);
     }
 
-    /// <summary>Open the card's ⋯ overflow menu on left-click (anchored below the button).</summary>
-    private void MoreButton_OnClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is System.Windows.Controls.Button { ContextMenu: { } menu } btn)
-        {
-            menu.PlacementTarget = btn;
-            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-            menu.IsOpen = true;
-        }
-    }
-
-    /// <summary>Bring the window back from the tray and refresh the list.</summary>
+    /// <summary>Bring the window back from the tray. The web UI polls its own status, so a reload
+    /// is enough to refresh immediately.</summary>
     public void ShowFromTray()
     {
-        _viewModel.LoadAll();
         Show();
         WindowState = WindowState.Normal;
         Activate();
         Topmost = true;
         Topmost = false;
+        WebView.CoreWebView2?.Reload();
     }
 }

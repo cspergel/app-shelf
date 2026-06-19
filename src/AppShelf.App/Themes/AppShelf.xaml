@@ -37,38 +37,71 @@
     <FontFamily x:Key="AppFont">Segoe UI Variable, Segoe UI</FontFamily>
     <FontFamily x:Key="MonoFont">Consolas</FontFamily>
 
-    <Duration x:Key="MotionFast">0:0:0.15</Duration>
+    <Duration x:Key="MotionFast">0:0:0.12</Duration>
 
     <!-- ============ Card shadow ============ -->
     <!-- Frozen: these are applied to static shadow underlays that never re-render, and never
-         swapped per-state (hover cross-fades the underlay's Opacity instead). Hover blur kept
-         at the top of the design range (12-16px) — larger radii cost real GPU per pixel. -->
-    <DropShadowEffect x:Key="CardShadow" Color="#000000" Opacity="0.30" BlurRadius="14"
+         swapped per-state (hover cross-fades the underlay's Opacity instead). Blur reduced
+         from 14→10 / 16→12 to match Linear's restrained elevation language. -->
+    <DropShadowEffect x:Key="CardShadow" Color="#000000" Opacity="0.25" BlurRadius="10"
                       ShadowDepth="2" Direction="270" po:Freeze="True"/>
-    <DropShadowEffect x:Key="CardShadowHover" Color="#000000" Opacity="0.45" BlurRadius="16"
+    <DropShadowEffect x:Key="CardShadowHover" Color="#000000" Opacity="0.38" BlurRadius="12"
                       ShadowDepth="3" Direction="270" po:Freeze="True"/>
 
     <!-- ============ Buttons ============ -->
+    <!-- ButtonBase: CornerRadius 6→5 (flatter, more confident); Padding 12,6→10,6 (tighter).
+         Press feedback: ScaleTransform compress 0.985 (Linear micro-interaction).
+         Scale root is the Grid wrapper so the inner Border background/border clips correctly. -->
     <Style x:Key="ButtonBase" TargetType="Button">
         <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
         <Setter Property="BorderThickness" Value="0"/>
-        <Setter Property="Padding" Value="12,6"/>
+        <Setter Property="Padding" Value="10,6"/>
         <Setter Property="Margin" Value="0,0,6,0"/>
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="FontFamily" Value="{StaticResource AppFont}"/>
+        <Setter Property="RenderTransformOrigin" Value="0.5,0.5"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="Bg" Background="{TemplateBinding Background}"
-                            BorderBrush="{TemplateBinding BorderBrush}"
-                            BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="6" Padding="{TemplateBinding Padding}">
-                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Border>
+                    <Grid x:Name="Root" RenderTransformOrigin="0.5,0.5">
+                        <Grid.RenderTransform>
+                            <ScaleTransform ScaleX="1" ScaleY="1"/>
+                        </Grid.RenderTransform>
+                        <Border x:Name="Bg" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="5" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <VisualStateManager.VisualStateGroups>
+                            <VisualStateGroup x:Name="CommonStates">
+                                <VisualState x:Name="Normal"/>
+                                <VisualState x:Name="MouseOver"/>
+                                <VisualState x:Name="Pressed">
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="Root"
+                                                         Storyboard.TargetProperty="RenderTransform.(ScaleTransform.ScaleX)"
+                                                         To="0.985" Duration="0:0:0.06">
+                                            <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                        <DoubleAnimation Storyboard.TargetName="Root"
+                                                         Storyboard.TargetProperty="RenderTransform.(ScaleTransform.ScaleY)"
+                                                         To="0.985" Duration="0:0:0.06">
+                                            <DoubleAnimation.EasingFunction><CubicEase EasingMode="EaseOut"/></DoubleAnimation.EasingFunction>
+                                        </DoubleAnimation>
+                                    </Storyboard>
+                                </VisualState>
+                                <VisualState x:Name="Disabled">
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="Bg"
+                                                         Storyboard.TargetProperty="Opacity"
+                                                         To="0.4" Duration="0"/>
+                                    </Storyboard>
+                                </VisualState>
+                            </VisualStateGroup>
+                        </VisualStateManager.VisualStateGroups>
+                    </Grid>
                     <ControlTemplate.Triggers>
-                        <Trigger Property="IsPressed" Value="True">
-                            <Setter TargetName="Bg" Property="Opacity" Value="0.7"/>
-                        </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="Bg" Property="Opacity" Value="0.4"/>
                         </Trigger>
@@ -90,45 +123,51 @@
         </Style.Triggers>
     </Style>
 
-    <!-- Quiet ghost: transparent until hover -->
+    <!-- Quiet ghost: transparent until hover — barely whispers on hover (#FFFFFF @ 6%),
+         text brightens to TextPrimary. Restraint: this button does not pop, only the primary does. -->
+    <SolidColorBrush x:Key="GhostHover" Color="#FFFFFF" Opacity="0.06" po:Freeze="True"/>
     <Style x:Key="GhostButton" TargetType="Button" BasedOn="{StaticResource ButtonBase}">
         <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
         <Setter Property="BorderBrush" Value="{StaticResource BorderHairline}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Style.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="{StaticResource SurfaceElevated}"/>
+                <Setter Property="Background" Value="{StaticResource GhostHover}"/>
+                <Setter Property="Foreground" Value="{StaticResource TextPrimary}"/>
             </Trigger>
         </Style.Triggers>
     </Style>
 
-    <!-- Red ghost for destructive actions -->
+    <!-- Red ghost for destructive actions: hover at 10% instead of 20% (was #33 = 20%) -->
     <Style x:Key="DangerGhostButton" TargetType="Button" BasedOn="{StaticResource GhostButton}">
         <Setter Property="Foreground" Value="{StaticResource StatusError}"/>
         <Style.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="#33E5645A"/>
+                <Setter Property="Background" Value="#1AE5645A"/>
+                <Setter Property="Foreground" Value="{StaticResource StatusError}"/>
             </Trigger>
         </Style.Triggers>
     </Style>
 
     <!-- ============ Chips ============ -->
-    <!-- Outline chip (type badge, member count) -->
+    <!-- Type badge / member-count: borderless — plain faint caption, no outline ring.
+         Linear style: remove visual noise, let text hierarchy carry the info weight. -->
     <Style x:Key="ChipBorder" TargetType="Border">
         <Setter Property="Background" Value="Transparent"/>
-        <Setter Property="BorderBrush" Value="{StaticResource BorderHairline}"/>
-        <Setter Property="BorderThickness" Value="1"/>
-        <Setter Property="CornerRadius" Value="4"/>
-        <Setter Property="Padding" Value="6,2"/>
+        <Setter Property="BorderBrush" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="CornerRadius" Value="3"/>
+        <Setter Property="Padding" Value="4,1"/>
     </Style>
     <Style x:Key="ChipText" TargetType="TextBlock">
         <Setter Property="FontSize" Value="11"/>
-        <Setter Property="Foreground" Value="{StaticResource TextSecondary}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextFaint}"/>
     </Style>
-    <!-- Violet-tinted tag chip -->
+    <!-- Violet-tinted tag chip: keep accent bg; reduce radius to 3px for restraint -->
     <Style x:Key="TagChipBorder" TargetType="Border" BasedOn="{StaticResource ChipBorder}">
         <Setter Property="Background" Value="{StaticResource AccentMuted}"/>
-        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Padding" Value="5,2"/>
     </Style>
 
     <!-- ============ Inputs ============ -->

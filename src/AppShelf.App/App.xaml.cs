@@ -73,7 +73,7 @@ public partial class App : Application
 
             var viewModel = new MainViewModel(_service, _dialogs, ShowPorts, _tray.ShowBalloon);
 
-            _window = new MainWindow(viewModel);
+            _window = new MainWindow(viewModel, _service);
             MainWindow = _window; // so modal dialogs can anchor to it
 
             // Create the Spotlight overlay HIDDEN. EnsureHandle materialises the HWND without

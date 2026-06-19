@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-surface-window text-text-primary font-sans antialiased;
+    /* Disable the WebView2 text-selection + drag glow so it feels native. */
+    -webkit-user-select: none;
+    user-select: none;
+    overflow: hidden;
+  }
+
+  /* Refined dark scrollbar (Linear/Ostara feel). */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-hairline rounded-full;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-surface-elevated;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
