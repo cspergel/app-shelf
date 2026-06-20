@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search, Plus, RefreshCw, Layers, LayoutGrid, Activity } from "lucide-react";
 import { useBridge } from "@/lib/use-bridge";
 import { CardGridDnd, type CardEntry, type StandaloneView } from "@/components/card-grid-dnd";
@@ -7,6 +7,7 @@ import { Toast, type ToastState } from "@/components/toast";
 import { AppDialog } from "@/components/app-dialog";
 import { HotkeySettings } from "@/components/hotkey-settings";
 import { ConfirmDialog, type ConfirmRequest } from "@/components/confirm-dialog";
+import { LogPanel } from "@/components/log-panel";
 import { removeApp } from "@/lib/app-actions";
 import { cn } from "@/lib/utils";
 import type { AppView } from "@/lib/types";
@@ -74,6 +75,20 @@ export default function App() {
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [pendingRemove, setPendingRemove] = useState<AppView | null>(null);
 
+  // Log viewer: the app whose log panel is open (null = closed). Only one panel at a time.
+  const [logPanelAppId, setLogPanelAppId] = useState<string | null>(null);
+  const showLogs = useCallback((id: string) => setLogPanelAppId(id), []);
+  // Crash ids whose log panel has already been auto-surfaced or manually dismissed. A still-crashed
+  // app must NOT re-open its panel after the user closes it; entries are pruned once the app recovers
+  // (logTail clears) so a future crash surfaces fresh.
+  const surfacedCrashes = useRef<Set<string>>(new Set());
+  const closeLogs = useCallback(() => {
+    setLogPanelAppId((prev) => {
+      if (prev) surfacedCrashes.current.add(prev); // remember the dismissal
+      return null;
+    });
+  }, []);
+
   const onToast = useCallback(
     (kind: "success" | "error", message: string) => setToast({ kind, message }),
     [],
@@ -122,6 +137,27 @@ export default function App() {
     webview?.addEventListener?.("message", handler);
     return () => webview?.removeEventListener?.("message", handler);
   }, [openAdd]);
+
+  // Auto-surface the log panel on crash: the bridge inlines a crashed app's log tail in the poll
+  // payload (logTail is non-null only for StoppedUnexpectedly). Surface the panel for a crashed app
+  // we haven't already shown/dismissed this crash cycle — so closing it does NOT immediately re-open
+  // while the app stays crashed. Recovered apps are pruned so a later re-crash surfaces again.
+  useEffect(() => {
+    const crashedNow = new Set(
+      apps.filter((a) => a.logTail && a.logTail.length > 0).map((a) => a.id),
+    );
+    for (const id of surfacedCrashes.current) {
+      if (!crashedNow.has(id)) surfacedCrashes.current.delete(id);
+    }
+    if (logPanelAppId !== null) return;
+    const next = apps.find(
+      (a) => a.logTail && a.logTail.length > 0 && !surfacedCrashes.current.has(a.id),
+    );
+    if (next) {
+      surfacedCrashes.current.add(next.id);
+      setLogPanelAppId(next.id);
+    }
+  }, [apps, logPanelAppId]);
 
   const onSaved = useCallback(
     (message: string) => {
@@ -314,6 +350,7 @@ export default function App() {
               onEdit={openEdit}
               onRemove={requestRemove}
               onFavorite={toggleFavorite}
+              onShowLogs={showLogs}
               onRegroup={regroupOptimistic}
               onDragStateChange={setDragging}
             />
@@ -345,6 +382,16 @@ export default function App() {
           setPendingRemove(null);
         }}
       />
+
+      {/* Per-app log viewer (bottom drawer). Opened from a card's "Logs" button or auto-surfaced
+          on crash. Only one panel at a time; closing returns null. */}
+      {logPanelAppId !== null && (
+        <LogPanel
+          appId={logPanelAppId}
+          appName={apps.find((a) => a.id === logPanelAppId)?.name ?? ""}
+          onClose={closeLogs}
+        />
+      )}
 
       {/* Quick-action result toast (success + friendly failures) */}
       <Toast toast={toast} onDismiss={() => setToast(null)} />

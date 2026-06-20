@@ -1,4 +1,4 @@
-import { Play, Square, ExternalLink, RotateCcw, Star, AlertTriangle, WifiOff } from "lucide-react";
+import { Play, Square, ExternalLink, RotateCcw, Star, AlertTriangle, WifiOff, ScrollText } from "lucide-react";
 import { StatusDot, StatusRail, statusMeta } from "./status-dot";
 import { CardMenu } from "./card-menu";
 import { cn } from "@/lib/utils";
@@ -12,10 +12,11 @@ interface AppCardProps {
   onEdit?: (app: AppView) => void;
   onRemove?: (app: AppView) => void;
   onFavorite?: (id: string, favorite: boolean) => void;
+  onShowLogs?: (id: string) => void;
   style?: React.CSSProperties;
 }
 
-export function AppCard({ app, onLaunch, onStop, onToast, onEdit, onRemove, onFavorite, style }: AppCardProps) {
+export function AppCard({ app, onLaunch, onStop, onToast, onEdit, onRemove, onFavorite, onShowLogs, style }: AppCardProps) {
   const meta = statusMeta(app.status);
   const favored = app.favorite;
 
@@ -144,6 +145,20 @@ export function AppCard({ app, onLaunch, onStop, onToast, onEdit, onRemove, onFa
 
           {/* Actions — right-anchored, tight */}
           <div className="flex items-center gap-0.5 shrink-0">
+            {/* Logs — leftmost secondary action; only meaningful when a process exists or just died */}
+            {(isRunning || isStarting || isError) && onShowLogs && (
+              <button
+                className="btn-ghost-action"
+                onClick={() => onShowLogs(app.id)}
+                title="View logs"
+              >
+                <span className="flex items-center gap-1">
+                  <ScrollText className="h-3 w-3" />
+                  Logs
+                </span>
+              </button>
+            )}
+
             {/* Secondary actions: borderless ghost text (no outline, no bg at rest) */}
             {(isRunning || isStarting) && (
               <button

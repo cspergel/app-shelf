@@ -13,6 +13,11 @@ using Forms = System.Windows.Forms;
 
 namespace AppShelf.App.Web;
 
+/// <summary>The minimal app projection the tray quick-launch submenu needs, surfaced from each
+/// bridge status poll. Public so <c>App.xaml.cs</c> can read it without exposing the bridge's
+/// private <c>AppView</c> record. <c>Status</c> is the same string the web UI receives.</summary>
+public sealed record TrayAppSnapshot(string Id, string Name, string Status, bool Favorite);
+
 /// <summary>
 /// JS &lt;-&gt; C# message bridge for the WebView2-hosted web UI (spike).
 ///
@@ -43,6 +48,12 @@ public sealed class AppShelfBridge
     private Func<string?, bool>? _tryRegisterHotkey;
     private Func<string?>? _getActiveHotkey;
 
+    /// <summary>Fired after each successful <c>listApps</c> poll with the freshly-computed app list.
+    /// <c>App.xaml.cs</c> subscribes to keep the tray quick-launch snapshot current without an extra
+    /// probe. Injected (settable) rather than an event to match the existing delegate-injection
+    /// style. Runs on the bridge's background <c>Task.Run</c> thread.</summary>
+    public Action<IReadOnlyList<TrayAppSnapshot>>? OnAppsPolled { get; set; }
+
     public AppShelfBridge(WebView2 webView, GuiAppService service)
     {
         _webView = webView;
@@ -68,7 +79,7 @@ public sealed class AppShelfBridge
     private sealed record AppView(
         string Id, string Name, string Url, string? Framework, bool Favorite,
         string? Group, string Role, int? Port, string Status, IReadOnlyList<string> Tags,
-        string? Dir);
+        string? Dir, IReadOnlyList<string>? LogTail);
 
     /// <summary>Port Doctor row: a rich <see cref="PortReport"/> projection. Unlike the CLI's
     /// <see cref="AppShelf.Core.Process.PortReportJson"/> (flat, drops ancestry) this keeps the full
@@ -129,7 +140,22 @@ public sealed class AppShelfBridge
         switch (method)
         {
             case "listApps":
-                return ListApps();
+            {
+                var apps = ListApps();
+                // Feed the tray quick-launch snapshot. A callback failure must never break the poll
+                // response, so swallow any exception from the subscriber.
+                try
+                {
+                    OnAppsPolled?.Invoke(apps
+                        .Select(a => new TrayAppSnapshot(a.Id, a.Name, a.Status, a.Favorite))
+                        .ToList());
+                }
+                catch
+                {
+                    /* never let a tray-snapshot subscriber failure bubble into the bridge response */
+                }
+                return apps;
+            }
 
             case "launch":
             {
@@ -256,6 +282,15 @@ public sealed class AppShelfBridge
             case "reservedPorts":
                 return _service.ReservedPorts(OptionalString(args, "excludeId")).ToArray();
 
+            // ── Log viewer ──────────────────────────────────────────────────
+            case "getLogTail":
+            {
+                // The captured stdout/stderr ring-buffer tail (up to 200 lines, oldest first).
+                // Empty array when the app is not managed/running.
+                var entry = ResolveApp(args);
+                return _service.LogTail(entry).ToArray();
+            }
+
             // ── Spotlight hotkey settings ───────────────────────────────────
             case "getHotkey":
                 return new
@@ -293,10 +328,20 @@ public sealed class AppShelfBridge
     private IReadOnlyList<AppView> ListApps()
     {
         var entries = _service.LoadApps();
-        // Project each app with its status concurrently (TCP probe per app).
-        var tasks = entries.Select(a => Task.Run(() => new AppView(
-            a.Id, a.Name, a.Url, a.Framework, a.Favorite,
-            a.Group, a.Role, a.Port, StatusFor(a), a.Tags, a.Dir))).ToArray();
+        // Project each app with its status concurrently (TCP probe per app). StatusFor is called
+        // once per app and reused for the LogTail decision (it does a blocking probe — don't repeat
+        // it). Only a crashed (StoppedUnexpectedly) app carries its log tail; every other status
+        // sends LogTail=null so the poll payload stays lean.
+        var tasks = entries.Select(a => Task.Run(() =>
+        {
+            var status = StatusFor(a);
+            var logTail = status == StoppedUnexpectedly
+                ? (IReadOnlyList<string>)_service.LogTail(a)
+                : null;
+            return new AppView(
+                a.Id, a.Name, a.Url, a.Framework, a.Favorite,
+                a.Group, a.Role, a.Port, status, a.Tags, a.Dir, logTail);
+        })).ToArray();
         return Task.WhenAll(tasks).GetAwaiter().GetResult();
     }
 
@@ -645,7 +690,7 @@ public sealed class AppShelfBridge
     /// list returns) so the JS side can splice the created/updated row in if it wants.</summary>
     private AppView ProjectApp(AppEntry a) =>
         new(a.Id, a.Name, a.Url, a.Framework, a.Favorite,
-            a.Group, a.Role, a.Port, StatusFor(a), a.Tags, a.Dir);
+            a.Group, a.Role, a.Port, StatusFor(a), a.Tags, a.Dir, LogTail: null);
 
     /// <summary>Normalize a role string to one of the allowed <see cref="AppRoles"/> values,
     /// defaulting to "other".</summary>

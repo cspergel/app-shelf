@@ -126,6 +126,11 @@ export default {
           from: { opacity: "0", transform: "translateY(-4px)" },
           to:   { opacity: "1", transform: "translateY(0)" },
         },
+        // Bottom drawer entrance (log panel)
+        "slide-up": {
+          from: { opacity: "0", transform: "translateY(12px)" },
+          to:   { opacity: "1", transform: "translateY(0)" },
+        },
         // Status rail entrance
         "rail-grow": {
           from: { transform: "scaleY(0)", transformOrigin: "top" },
@@ -138,6 +143,7 @@ export default {
         "pulse-dot": "pulse-dot 1.2s ease-in-out infinite",
         "breathe":   "breathe 2.4s ease-in-out infinite",
         "slide-down":"slide-down 0.14s cubic-bezier(0.16,1,0.3,1) both",
+        "slide-up":  "slide-up 0.16s cubic-bezier(0.16,1,0.3,1) both",
         "rail-grow": "rail-grow 0.18s cubic-bezier(0.16,1,0.3,1) both",
       },
 

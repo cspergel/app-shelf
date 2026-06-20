@@ -18,6 +18,10 @@ public partial class MainWindow : Window
     private Func<string?, bool>? _tryRegisterHotkey;
     private Func<string?>? _getActiveHotkey;
 
+    // Tray quick-launch snapshot callback injected from App.xaml.cs. Stored here (same reason as the
+    // hotkey delegates) and forwarded to the bridge once WebView2 init builds it.
+    private Action<IReadOnlyList<TrayAppSnapshot>>? _onAppsPolled;
+
     // Dev server the web UI is served from in DEBUG (see vite.config.ts → port 5199).
     private const string DevServerUrl = "http://localhost:5199";
 
@@ -37,13 +41,19 @@ public partial class MainWindow : Window
         {
             try
             {
-                // Disable GPU compositing so WebView2's GPU compositor invalidates correctly
-                // on CSS variable (theme) changes. Without this, computed styles update but the
-                // compositor keeps painting stale colors even after a full page reload.
-                // Using --disable-gpu-compositing (not --disable-gpu) so Chromium still uses the
-                // GPU for rasterisation; only the compositor layer is forced to software.
+                // --disable-gpu-compositing: WebView2's GPU compositor invalidates correctly on CSS
+                //   variable (theme) changes. Without it, computed styles update but the compositor
+                //   keeps painting stale colors even after a full page reload. (Not --disable-gpu, so
+                //   Chromium still rasterises on the GPU; only the compositor is forced to software.)
+                // --disable-background-timer-throttling (+ renderer-backgrounding / backgrounding-
+                //   occluded-windows): when the window is hidden to the tray, Chromium otherwise
+                //   throttles JS timers, which stalls the ~2s status poll that feeds the tray
+                //   quick-launch snapshot — leaving tray status dots stale (e.g. grey while running).
+                //   Disabling throttling keeps the poll live while hidden so the tray reflects reality.
                 var options = new CoreWebView2EnvironmentOptions(
-                    additionalBrowserArguments: "--disable-gpu-compositing");
+                    additionalBrowserArguments:
+                        "--disable-gpu-compositing --disable-background-timer-throttling " +
+                        "--disable-renderer-backgrounding --disable-backgrounding-occluded-windows");
                 var env = await CoreWebView2Environment.CreateAsync(
                     browserExecutableFolder: null, userDataFolder: null, options: options);
                 await WebView.EnsureCoreWebView2Async(env);
@@ -70,6 +80,10 @@ public partial class MainWindow : Window
         // completes), hand them to the freshly-constructed bridge now.
         if (_tryRegisterHotkey is not null && _getActiveHotkey is not null)
             _bridge.SetHotkeyDelegates(_tryRegisterHotkey, _getActiveHotkey);
+
+        // Forward the tray quick-launch snapshot callback (supplied by App.xaml.cs before init).
+        if (_onAppsPolled is not null)
+            _bridge.OnAppsPolled = _onAppsPolled;
 
 #if DEBUG
         WebView.CoreWebView2.Navigate(DevServerUrl);
@@ -150,5 +164,14 @@ public partial class MainWindow : Window
         _tryRegisterHotkey = tryRegister;
         _getActiveHotkey = getActive;
         _bridge?.SetHotkeyDelegates(tryRegister, getActive);
+    }
+
+    /// <summary>Inject the tray quick-launch snapshot callback from App.xaml.cs. Stored on the
+    /// window (the bridge may not yet exist) and forwarded to the bridge when it does.</summary>
+    public void SetOnAppsPolled(Action<IReadOnlyList<TrayAppSnapshot>> onAppsPolled)
+    {
+        _onAppsPolled = onAppsPolled;
+        if (_bridge is not null)
+            _bridge.OnAppsPolled = onAppsPolled;
     }
 }

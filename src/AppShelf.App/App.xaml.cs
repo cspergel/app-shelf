@@ -7,6 +7,7 @@ using AppShelf.App.Services;
 using AppShelf.App.Spotlight;
 using AppShelf.App.Tray;
 using AppShelf.App.ViewModels;
+using AppShelf.App.Web;
 using Forms = System.Windows.Forms;
 
 namespace AppShelf.App;
@@ -28,6 +29,12 @@ public partial class App : Application
     private MainWindow _window = null!;
     private SpotlightWindow _spotlight = null!;
     private HotkeyService? _hotkey;
+
+    // Last-known app status snapshot for the tray quick-launch submenu. Written by the bridge's
+    // post-poll callback (off the UI thread) and read by TrayIconService.OnMenuOpening on the
+    // WinForms message-pump thread. `volatile` guarantees the menu thread sees the latest write;
+    // the assignment is a single atomic reference replace, so no lock is needed.
+    private volatile IReadOnlyList<TrayAppView> _traySnapshot = Array.Empty<TrayAppView>();
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -68,12 +75,25 @@ public partial class App : Application
                 hotkey: ShowHotkeySettings,
                 add: AddFromTray,
                 ports: ShowPorts,
-                quit: QuitApp);
+                quit: QuitApp,
+                getAppSnapshot: () => _traySnapshot,
+                launchApp: LaunchFromTray,
+                stopApp: StopFromTray);
 
             var viewModel = new MainViewModel(_service, _dialogs, ShowPorts, _tray.ShowBalloon);
 
             _window = new MainWindow(viewModel, _service);
             MainWindow = _window; // so modal dialogs can anchor to it
+
+            // Feed the tray quick-launch snapshot from each bridge status poll (~2s). The bridge is
+            // built lazily after WebView2 init, so MainWindow stores the callback and forwards it
+            // when the bridge exists (same pattern as the hotkey delegates). The callback runs on a
+            // background thread; the volatile reference assignment is the thread-safety boundary.
+            _window.SetOnAppsPolled(views => _traySnapshot = views
+                .Select(v => new TrayAppView(
+                    v.Id, v.Name, v.Status, v.Favorite,
+                    v.Status is "Running" or "Starting"))
+                .ToArray());
 
             // Create the Spotlight overlay HIDDEN. EnsureHandle materialises the HWND without
             // showing the window — required before HotkeyService can RegisterHotKey against it.
@@ -148,6 +168,27 @@ public partial class App : Application
     }
 
     private void ShowWindow() => _window.ShowFromTray();
+
+    /// <summary>Tray quick-launch: resolve the app by id and launch it off the UI thread. Called
+    /// from <see cref="TrayIconService"/>'s click handler (already wrapped in <c>Task.Run</c>).
+    /// LoadApps re-reads from config so a stale tray snapshot can't launch a removed app.</summary>
+    private void LaunchFromTray(string id)
+    {
+        var entry = _service.LoadApps().FirstOrDefault(a => a.Id == id);
+        if (entry is null)
+            return;
+        _ = _service.LaunchAsync(entry);
+    }
+
+    /// <summary>Tray quick-launch: resolve the app by id and stop it. Stop is synchronous; the
+    /// caller already runs this off the UI thread.</summary>
+    private void StopFromTray(string id)
+    {
+        var entry = _service.LoadApps().FirstOrDefault(a => a.Id == id);
+        if (entry is null)
+            return;
+        _service.Stop(entry);
+    }
 
     /// <summary>Tray "Ports…": show the main window and switch the web UI to its Ports tab via the
     /// C#→JS navigation push (the WPF PortsWindow dialog was removed in the WebView2 cutover).</summary>

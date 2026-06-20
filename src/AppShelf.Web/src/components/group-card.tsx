@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronRight, Play, Square, ExternalLink, Star, GripVertical } from "lucide-react";
+import { ChevronRight, Play, Square, ExternalLink, Star, GripVertical, ScrollText } from "lucide-react";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { DragKind } from "@/lib/regroup";
@@ -17,6 +17,7 @@ interface GroupCardProps {
   onEdit?: (app: AppView) => void;
   onRemove?: (app: AppView) => void;
   onFavorite?: (id: string, favorite: boolean) => void;
+  onShowLogs?: (id: string) => void;
   /** Drag state from the grid (optional — group card also renders outside DnD in tests). */
   activeMemberId?: string | null;
   overMemberId?: string | null;
@@ -68,7 +69,7 @@ function RoleChip({ role }: { role: string }) {
   );
 }
 
-export function GroupCard({ name, members, onLaunch, onStop, onToast, onEdit, onRemove, onFavorite, activeMemberId, overMemberId, style }: GroupCardProps) {
+export function GroupCard({ name, members, onLaunch, onStop, onToast, onEdit, onRemove, onFavorite, onShowLogs, activeMemberId, overMemberId, style }: GroupCardProps) {
   const [expanded, setExpanded] = useState(true);
   const aggStatus = aggregateStatus(members);
   const aggMeta = statusMeta(aggStatus);
@@ -195,6 +196,7 @@ export function GroupCard({ name, members, onLaunch, onStop, onToast, onEdit, on
                   onEdit={onEdit}
                   onRemove={onRemove}
                   onFavorite={onFavorite}
+                  onShowLogs={onShowLogs}
                 />
               ))}
             </div>
@@ -216,6 +218,7 @@ function MemberRow({
   onEdit,
   onRemove,
   onFavorite,
+  onShowLogs,
 }: {
   member: AppView;
   dragging: boolean;
@@ -226,6 +229,7 @@ function MemberRow({
   onEdit?: (app: AppView) => void;
   onRemove?: (app: AppView) => void;
   onFavorite?: (id: string, favorite: boolean) => void;
+  onShowLogs?: (id: string) => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
     id: `member:${member.id}`,
@@ -235,6 +239,11 @@ function MemberRow({
   const mMeta = statusMeta(member.status);
   const mStopped = member.status === "Stopped";
   const mRunning = member.status === "Running";
+  const mActive =
+    mRunning ||
+    member.status === "Starting" ||
+    member.status === "Error" ||
+    member.status === "StoppedUnexpectedly";
 
   const style: React.CSSProperties = {
     transform: CSS.Translate.toString(transform),
@@ -314,6 +323,17 @@ function MemberRow({
           {mRunning ? "↗" : mStopped ? "▶" : "■"}
         </button>
       </div>
+
+      {/* Per-member Logs button — hover-only, only when a process exists or just died */}
+      {mActive && onShowLogs && (
+        <button
+          onClick={() => onShowLogs(member.id)}
+          className="shrink-0 opacity-0 group-hover/member:opacity-100 transition-opacity duration-[120ms] text-text-faint hover:text-text-secondary"
+          title="View logs"
+        >
+          <ScrollText className="h-3 w-3" />
+        </button>
+      )}
 
       {/* Per-member ⋯ menu */}
       <div className="shrink-0 opacity-70 group-hover/member:opacity-100 transition-opacity duration-[120ms] focus-within:opacity-100">

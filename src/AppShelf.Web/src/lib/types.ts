@@ -26,6 +26,9 @@ export interface AppView {
   tags?: string[];
   /** Working directory; null for URL-only apps (dir-dependent quick actions are hidden). */
   dir?: string | null;
+  /** Captured stdout/stderr tail — populated by the bridge ONLY when status is
+   * "StoppedUnexpectedly" (a crash), so the log panel can auto-surface without an extra poll. */
+  logTail?: string[];
 }
 
 /** Result shape the quick-action bridge methods resolve with (mirrors C# { ok, reason }). */

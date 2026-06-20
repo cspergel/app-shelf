@@ -45,6 +45,7 @@ interface CardGridDndProps {
   onEdit: (app: AppView) => void;
   onRemove: (app: AppView) => void;
   onFavorite: (id: string, favorite: boolean) => void;
+  onShowLogs?: (id: string) => void;
   /**
    * Apply a drag-to-group gesture. The grid updates the LOCAL card list optimistically and
    * persists in the background (no blocking status re-scan). For a brand-new group this
@@ -85,6 +86,7 @@ export function CardGridDnd(props: CardGridDndProps) {
     onEdit,
     onRemove,
     onFavorite,
+    onShowLogs,
     onRegroup,
     onDragStateChange,
   } = props;
@@ -205,6 +207,7 @@ export function CardGridDnd(props: CardGridDndProps) {
                       onEdit={onEdit}
                       onRemove={onRemove}
                       onFavorite={onFavorite}
+                      onShowLogs={onShowLogs}
                       activeMemberId={active?.app.id ?? null}
                       overMemberId={overId}
                       style={style}
@@ -225,6 +228,7 @@ export function CardGridDnd(props: CardGridDndProps) {
                   onEdit={onEdit}
                   onRemove={onRemove}
                   onFavorite={onFavorite}
+                  onShowLogs={onShowLogs}
                   style={style}
                 />
               );
@@ -324,6 +328,7 @@ function SortableAppCard({
   onEdit: (app: AppView) => void;
   onRemove: (app: AppView) => void;
   onFavorite: (id: string, favorite: boolean) => void;
+  onShowLogs?: (id: string) => void;
 }) {
   const {
     attributes,
