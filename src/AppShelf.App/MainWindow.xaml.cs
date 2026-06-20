@@ -64,10 +64,23 @@ public partial class MainWindow : Window
 #if DEBUG
         WebView.CoreWebView2.Navigate(DevServerUrl);
 #else
-        // TODO (post-spike): serve the built web assets from disk/embedded resources via
-        // SetVirtualHostNameToFolderMapping and navigate to the virtual host, so RELEASE
-        // builds don't depend on a running Vite dev server.
-        WebView.CoreWebView2.Navigate(DevServerUrl);
+        // RELEASE: serve the web UI from assets shipped inside the exe. The web build is embedded
+        // as webui.zip, extracted once to %LOCALAPPDATA%/AppShelf/webui/<version>/, and that folder
+        // is mapped to a virtual host so the page loads with NO Vite dev server / no localhost.
+        try
+        {
+            var folder = WebUiAssets.EnsureExtracted();
+            WebView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                WebUiAssets.VirtualHost, folder, CoreWebView2HostResourceAccessKind.Allow);
+            WebView.CoreWebView2.Navigate($"https://{WebUiAssets.VirtualHost}/index.html");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                $"The web UI could not be loaded:\n\n{ex.Message}\n\n" +
+                "The application may not have been published correctly.",
+                "AppShelf", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
 #endif
     }
 
