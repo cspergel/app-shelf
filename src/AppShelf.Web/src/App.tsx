@@ -159,6 +159,14 @@ export default function App() {
     }
   }, [apps, logPanelAppId]);
 
+  // Close the log panel if its app is removed from the list (e.g. the user deletes the app while
+  // its log panel is open) — otherwise the panel lingers showing a stale, now-nonexistent app.
+  useEffect(() => {
+    if (logPanelAppId !== null && !apps.some((a) => a.id === logPanelAppId)) {
+      setLogPanelAppId(null);
+    }
+  }, [apps, logPanelAppId]);
+
   const onSaved = useCallback(
     (message: string) => {
       onToast("success", message);

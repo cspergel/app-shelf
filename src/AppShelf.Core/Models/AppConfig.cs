@@ -5,6 +5,12 @@ namespace AppShelf.Core.Models;
 /// </summary>
 public sealed class AppConfig
 {
+    /// <summary>
+    /// Config schema version marker (currently always 1). Reserved for future use.
+    /// There is no migration system in v0 — this value exists so a future migration path
+    /// can detect older files. Do not add migration logic here without creating a dedicated
+    /// migration component first.
+    /// </summary>
     public int Version { get; set; } = 1;
 
     /// <summary>

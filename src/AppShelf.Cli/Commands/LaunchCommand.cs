@@ -62,7 +62,32 @@ public static class LaunchCommand
             waited += step;
         }
 
-        CliHelpers.Error($"'{entry.Name}' did not come up at {entry.Url} within 30s; it may still be starting (pid {pid}).");
+        // The deadline passed without the port coming up. The hint depends on whether the process
+        // is still alive: a live process is likely a slow startup; an exited one crashed/failed
+        // (bad command, missing dependency) and "still starting" would be misleading.
+        bool processAlive;
+        try
+        {
+            var p = System.Diagnostics.Process.GetProcessById(pid);
+            processAlive = !p.HasExited;
+        }
+        catch
+        {
+            processAlive = false;
+        }
+
+        if (processAlive)
+        {
+            CliHelpers.Error(
+                $"'{entry.Name}' did not come up at {entry.Url} within 30s — it may still be starting (pid {pid}). " +
+                "Check the process with 'appshelf list' or wait a moment.");
+        }
+        else
+        {
+            CliHelpers.Error(
+                $"'{entry.Name}' (pid {pid}) exited before the port was ready at {entry.Url}. " +
+                "Check the command in your config: 'appshelf list' or your config file.");
+        }
         return 1;
     }
 }
