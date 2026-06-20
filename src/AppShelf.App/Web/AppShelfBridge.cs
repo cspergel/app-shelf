@@ -46,7 +46,13 @@ public sealed class AppShelfBridge
     /// <summary>Card-grid row: an <see cref="AppEntry"/> projection + its live status.</summary>
     private sealed record AppView(
         string Id, string Name, string Url, string? Framework, bool Favorite,
-        string? Group, string Role, int? Port, LaunchStatus Status);
+        string? Group, string Role, int? Port, string Status, IReadOnlyList<string> Tags);
+
+    /// <summary>The web UI's "crashed" state. The Core <see cref="LaunchStatus"/> enum has no
+    /// such member (crash detection is GUI-only), so the bridge emits this string directly when a
+    /// managed app exited unexpectedly. Mirrors the WPF crash watcher's intent without replicating
+    /// its debounce state (the web UI polls every ~2s; one managed-and-exited signal is enough).</summary>
+    private const string StoppedUnexpectedly = "StoppedUnexpectedly";
 
     private async void OnWebMessageReceived(
         object? sender, Microsoft.Web.WebView2.Core.CoreWebView2WebMessageReceivedEventArgs e)
@@ -113,8 +119,33 @@ public sealed class AppShelfBridge
         _service.LoadApps()
             .Select(a => new AppView(
                 a.Id, a.Name, a.Url, a.Framework, a.Favorite,
-                a.Group, a.Role, a.Port, _service.StatusOf(a)))
+                a.Group, a.Role, a.Port, StatusFor(a), a.Tags))
             .ToList();
+
+    /// <summary>Live status name for the grid. A managed app whose process exited unexpectedly is
+    /// reported as <see cref="StoppedUnexpectedly"/> (the engine would otherwise call it Stopped),
+    /// so the web UI's "crashed" treatment lights up.
+    ///
+    /// PortInUse is re-projected to "Running" for this resting card-grid display: the engine's
+    /// owner-aware status calls a listening-but-not-managed-by-this-session port PortInUse (red),
+    /// but for the grid a serving registered port means the app is up — regardless of who launched
+    /// it. Real port conflicts are surfaced at LAUNCH time (pre-flight), not in the resting status.
+    /// This projection is web-bridge-only; AppShelf.Core and GuiAppService.StatusOf keep the
+    /// owner-aware behavior for the WPF path and launch pre-flight.
+    ///
+    /// All other statuses (Stopped/Starting/Running/Error) pass through verbatim — identical to what
+    /// the enum-string serializer would have produced.</summary>
+    private string StatusFor(AppEntry entry)
+    {
+        if (_service.DidManagedAppExit(entry))
+            return StoppedUnexpectedly;
+
+        var status = _service.StatusOf(entry);
+        if (status == LaunchStatus.PortInUse)
+            return LaunchStatus.Running.ToString();
+
+        return status.ToString();
+    }
 
     /// <summary>Resolve an <c>{ id }</c> arg to a live <see cref="AppEntry"/> via the config store
     /// (so we never trust a stale entry the JS side might have cached).</summary>

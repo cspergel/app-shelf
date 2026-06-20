@@ -4,47 +4,51 @@ export default {
   theme: {
     extend: {
       colors: {
-        // ── Surface ramp — driven by CSS variables (data-theme switching) ──
-        // CSS vars store raw RGB channels (e.g. "15 15 28") so Tailwind can
-        // inject alpha modifiers via rgb(var(--surface-window) / <alpha-value>).
-        // Switch palette: document.documentElement.dataset.theme = "light" | "slate" | "indigo" | "warm"
+        // ── Surface ramp — TRUE Ostara palette (krud-dev/ostara Minimal MUI) ──
+        // Cool blue-slate hue family. Cards are LIGHTER than the window.
+        // Literal hex values baked by Tailwind at build time (single theme).
         surface: {
-          window:       "rgb(var(--surface-window) / <alpha-value>)",
-          card:         "rgb(var(--surface-card) / <alpha-value>)",
-          "card-hover": "rgb(var(--surface-card-hover) / <alpha-value>)",
-          elevated:     "rgb(var(--surface-elevated) / <alpha-value>)",
-          inset:        "rgb(var(--surface-inset) / <alpha-value>)",
+          window:       "#161C24",   // Ostara background — deepest cool blue-slate
+          card:         "#212B36",   // Ostara paper — clearly lighter than window
+          "card-hover": "#2A3540",   // card hover — subtle lift, same hue family
+          elevated:     "#323D4A",   // elevated panels / dropdowns / popovers
+          inset:        "#0F141B",   // inset / recessed areas — slightly darker than window
         },
 
-        // ── Accent (indigo-violet family) ───────────────────────────────────
+        // ── Accent — Ostara GREEN (the defining change from prior violet pass) ─
+        // Source: Ostara Minimal palette primary
         accent: {
-          DEFAULT: "rgb(var(--accent-rgb) / <alpha-value>)",
-          hover:   "rgb(var(--accent-hover-rgb) / <alpha-value>)",
-          muted:   "var(--accent-muted)",
-          subtle:  "var(--accent-subtle)",
+          DEFAULT: "#00AB55",        // Ostara primary.main — emerald green
+          hover:   "#007B55",        // Ostara primary.dark
+          light:   "#5BE584",        // Ostara primary.light
+          lighter: "#C8FACD",        // Ostara primary.lighter
+          dark:    "#007B55",        // Ostara primary.dark
+          darker:  "#005249",        // Ostara primary.darker
+          muted:   "rgba(0,171,85,0.15)",   // green tint for chip backgrounds
+          subtle:  "rgba(0,171,85,0.07)",   // very faint green fill
         },
 
-        // ── Borders ────────────────────────────────────────────────────────
-        // hairline uses rgba() directly in CSS (--hairline-opacity controls it)
-        // so we expose it as a plain CSS var reference for border-hairline class.
-        hairline: "rgba(var(--hairline) / var(--hairline-opacity, 0.10))",
+        // ── Hairline — cool gray at low opacity ───────────────────────────
+        // Ostara: white @ ~8% feels right on these surfaces
+        hairline: "rgba(145,158,171,0.08)",
 
-        // ── Text ───────────────────────────────────────────────────────────
+        // ── Text — Ostara cool blue-gray ramp ─────────────────────────────
         text: {
-          primary:   "rgb(var(--text-primary) / <alpha-value>)",
-          secondary: "rgb(var(--text-secondary) / <alpha-value>)",
-          faint:     "rgb(var(--text-faint) / <alpha-value>)",
-          accent:    "rgb(var(--text-accent) / <alpha-value>)",
+          primary:   "#F9FAFB",    // near-white — Ostara text.primary
+          secondary: "#919EAB",    // Ostara text.secondary — muted labels/meta
+          faint:     "#637381",    // Ostara text.disabled — timestamps, placeholders
+          accent:    "#5BE584",    // Ostara primary.light — URL links when running
         },
 
-        // ── Status — driven by CSS vars (light theme uses deeper values) ───
+        // ── Status — harmonized with Ostara green family ───────────────────
+        // Running uses the Ostara green so accent and "running" are on-brand.
         status: {
-          running:  "rgb(var(--status-running) / <alpha-value>)",
-          starting: "rgb(var(--status-starting) / <alpha-value>)",
-          error:    "rgb(var(--status-error) / <alpha-value>)",
-          stopped:  "rgb(var(--status-stopped) / <alpha-value>)",
-          port:     "rgb(var(--status-port) / <alpha-value>)",
-          crash:    "rgb(var(--status-crash) / <alpha-value>)",
+          running:  "#00AB55",    // Ostara primary.main — running = accent green
+          starting: "#FFAB00",    // Ostara warning.main — amber
+          error:    "#FF5630",    // Ostara error.main — red
+          stopped:  "#454F5B",    // Ostara grey.700 — cool gray, intentionally dim
+          port:     "#FF5630",    // same as error
+          crash:    "#FF7350",    // distinct orange-red (slightly lighter than error)
         },
       },
 
@@ -98,7 +102,7 @@ export default {
         "card-hover":"0 8px 24px rgba(0,0,0,0.60), 0 2px 6px rgba(0,0,0,0.40)",
         elevated:    "0 4px 16px rgba(0,0,0,0.50)",
         inset:       "inset 0 1px 0 rgba(255,255,255,0.04)",
-        "accent-glow":"0 0 0 2px rgba(110,98,219,0.35)",
+        "accent-glow":"0 0 0 2px rgba(0,171,85,0.35)",
       },
 
       keyframes: {

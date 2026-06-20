@@ -1,38 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Search, Plus, RefreshCw, Layers, Sun, Moon } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Search, Plus, RefreshCw, Layers } from "lucide-react";
 import { useBridge } from "@/lib/use-bridge";
 import { AppCard } from "@/components/app-card";
 import { GroupCard } from "@/components/group-card";
 import { cn } from "@/lib/utils";
 import type { AppView } from "@/lib/types";
-
-// ── Theme toggle hook ──────────────────────────────────────────────────────
-type AppTheme = "light" | "dark";
-
-function useTheme(): [AppTheme, () => void] {
-  const [theme, setTheme] = useState<AppTheme>(() => {
-    // Read from html[data-theme] which was set before React mounts (main.tsx)
-    const current = document.documentElement.dataset.theme;
-    return current === "light" ? "light" : "dark";
-  });
-
-  const toggle = useCallback(() => {
-    setTheme((prev) => {
-      const next: AppTheme = prev === "dark" ? "light" : "dark";
-      document.documentElement.dataset.theme = next;
-      localStorage.setItem("appshelf-theme", next);
-      return next;
-    });
-  }, []);
-
-  // Keep html[data-theme] in sync on mount (handles edge-case where localStorage
-  // and the bootstrap script diverged — e.g. SSR or test environments)
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
-
-  return [theme, toggle];
-}
 
 // ── Group aggregation ──────────────────────────────────────────────────────
 interface GroupedView {
@@ -84,7 +56,6 @@ function buildCardEntries(apps: AppView[]): CardEntry[] {
 export default function App() {
   const { apps, loading, error, connected, refresh, launch, stop } = useBridge();
   const [query, setQuery] = useState("");
-  const [theme, toggleTheme] = useTheme();
 
   // Stats for the header badge
   const runningCount = apps.filter((a) => a.status === "Running").length;
@@ -183,22 +154,6 @@ export default function App() {
           <RefreshCw className="h-3.5 w-3.5" />
         </button>
 
-        {/* Theme toggle — sun/moon, tasteful, no label */}
-        <button
-          onClick={toggleTheme}
-          title={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-          className={cn(
-            "h-7 w-7 flex items-center justify-center rounded-input transition-all duration-[120ms]",
-            "text-text-faint hover:text-text-secondary hover:bg-surface-card-hover",
-          )}
-        >
-          {theme === "dark" ? (
-            <Sun className="h-3.5 w-3.5" />
-          ) : (
-            <Moon className="h-3.5 w-3.5" />
-          )}
-        </button>
-
         {/* Add app — primary affordance in header */}
         <button
           title="Add app"
@@ -251,7 +206,6 @@ function CardGrid({
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3">
       {entries.map((entry, i) => {
-        // Stagger entrance by index (capped at 200ms)
         const delay = Math.min(i * 35, 200);
         const style = { animationDelay: `${delay}ms` };
 

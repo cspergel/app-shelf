@@ -1,4 +1,4 @@
-/* Inter — explicit Vietnamese subset + full Latin; weight 400/500/600/700 */
+/* Inter + JetBrains Mono */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @tailwind base;
@@ -6,80 +6,20 @@
 @tailwind utilities;
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   PALETTE THEMES — light + dark only (runtime toggle)
-   Switch: document.documentElement.dataset.theme = "light" | "dark"
-   Default (no data-theme set) = dark.
-
-   WHY RGB CHANNELS, NOT HEX:
-   Tailwind 3 resolves color config values at build time into rgb() expressions.
-   Storing hex in a CSS var causes it to be baked in as a static color at compile
-   time. Storing raw RGB channels (e.g. "20 22 25") lets Tailwind generate
-   rgb(var(--surface-window) / opacity) which then resolves correctly at runtime
-   when data-theme changes. All surface, text, and hairline vars use this pattern.
+   SINGLE THEME — Ostara-inspired deep slate dark
+   No runtime switching. Colors are literal hex baked by Tailwind at build
+   time; this file only carries structural helpers that can't live in config.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ── DEFAULT (no data-theme) = Dark ─────────────────────────────────────── */
-/* Neutral charcoal. Surfaces are near-zero saturation — violet only accents. */
-:root:not([data-theme]),
-:root[data-theme=""],
-:root[data-theme="dark"],
-html[data-theme="dark"] {
-  /* Surface RGB channels — near-neutral charcoal, whisper-cool tint */
-  --surface-window:     20 22 25;      /* #141619 */
-  --surface-card:       26 29 33;      /* #1A1D21 */
-  --surface-card-hover: 31 35 40;      /* #1F2328 */
-  --surface-elevated:   35 39 45;      /* #23272D */
-  --surface-inset:      15 17 19;      /* #0F1113 */
-  /* Accent RGB channels — violet used ONLY for interactive accents */
-  --accent-rgb:         107 95 210;    /* #6B5FD2 — slightly muted vs candy */
-  --accent-hover-rgb:   128 117 226;   /* #8075E2 */
-  --accent-muted:       rgba(107,95,210,0.15);
-  --accent-subtle:      rgba(107,95,210,0.07);
-  /* Hairline — cool white at 7%, not purple */
-  --hairline:           255 255 255;
-  --hairline-opacity:   0.07;
-  /* Text RGB channels — crisp, high-contrast */
-  --text-primary:       232 234 237;   /* #E8EAED */
-  --text-secondary:     154 161 171;   /* #9AA1AB */
-  --text-faint:         92 99 110;     /* #5C636E */
-  --text-accent:        152 143 220;   /* #988FDC */
-  /* Status (remain saturated — only color that pops) */
-  --status-running:     46 189 130;    /* #2EBD82 */
-  --status-starting:    217 154 62;    /* #D99A3E */
-  --status-error:       217 92 83;     /* #D95C53 */
-  --status-stopped:     78 83 96;      /* #4E5360 */
-  --status-port:        217 92 83;
-  --status-crash:       232 120 85;    /* #E87855 */
-}
-
-/* ── THEME: Light — white/near-white, dark text, punchy violet accent ────── */
-/* Linear/Vercel light mode. Clearly light. Accent pops on pale surface.     */
-:root[data-theme="light"],
-html[data-theme="light"] {
-  --surface-window:     245 245 250;   /* #F5F5FA */
-  --surface-card:       255 255 255;   /* #FFFFFF */
-  --surface-card-hover: 240 240 248;   /* #F0F0F8 */
-  --surface-elevated:   237 237 245;   /* #EDEDF5 */
-  --surface-inset:      234 234 242;   /* #EAEAF2 */
-  --accent-rgb:         99 80 215;
-  --accent-hover-rgb:   120 102 228;
-  --accent-muted:       rgba(99,80,215,0.10);
-  --accent-subtle:      rgba(99,80,215,0.05);
-  --hairline:           0 0 0;
-  --hairline-opacity:   0.08;
-  --text-primary:       17 17 24;      /* #111118 */
-  --text-secondary:     92 92 114;     /* #5C5C72 */
-  --text-faint:         152 152 174;   /* #9898AE */
-  --text-accent:        99 80 215;     /* #6350D7 */
-  --status-running:     26 158 104;    /* #1A9E68 */
-  --status-starting:    184 130 10;    /* #B8820A */
-  --status-error:       196 59 50;     /* #C43B32 */
-  --status-stopped:     112 120 136;   /* #707888 */
-  --status-port:        196 59 50;
-  --status-crash:       201 95 56;     /* #C95F38 */
-}
-
 @layer base {
+  /* ── Forced-colors opt-out ──────────────────────────────────────────────
+     WebView2 / Windows high-contrast mode forces system palette values.
+     Opt the whole subtree out so author colors are always used. */
+  html {
+    forced-color-adjust: none;
+    color-scheme: dark;
+  }
+
   html,
   body,
   #root {
@@ -87,8 +27,8 @@ html[data-theme="light"] {
   }
 
   body {
-    background-color: rgb(var(--surface-window));
-    color: rgb(var(--text-primary));
+    background-color: #161C24;   /* Ostara background — cool blue-slate */
+    color: #F9FAFB;              /* Ostara text.primary */
     font-family: Inter, "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     -webkit-font-smoothing: antialiased;
@@ -98,29 +38,21 @@ html[data-theme="light"] {
     overflow: hidden;
   }
 
-  /* Thin, refined scrollbar — dark themes: white tint; light: dark tint */
+  /* Thin scrollbar */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.10);
+    background: rgba(255, 255, 255, 0.09);
     border-radius: 999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.16);
   }
   ::-webkit-scrollbar-track {
     background: transparent;
   }
-
-  html[data-theme="light"] ::-webkit-scrollbar-thumb {
-    background: rgba(0, 0, 0, 0.12);
-  }
-  html[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
-    background: rgba(0, 0, 0, 0.22);
-  }
-  /* Dark theme uses the default white-tint scrollbar (set above in ::-webkit-scrollbar-thumb) */
 
   /* Allow text selection inside inputs */
   input, textarea {
@@ -136,12 +68,12 @@ html[data-theme="light"] {
   .animation-delay-150 { animation-delay: 150ms; }
   .animation-delay-200 { animation-delay: 200ms; }
 
-  /* Hairline top/bottom dividers */
+  /* Hairline top/bottom dividers — literal rgba, no CSS var needed */
   .border-top-hairline {
-    border-top: 1px solid rgba(var(--hairline) / var(--hairline-opacity, 0.10));
+    border-top: 1px solid rgba(255,255,255,0.07);
   }
   .border-bottom-hairline {
-    border-bottom: 1px solid rgba(var(--hairline) / var(--hairline-opacity, 0.10));
+    border-bottom: 1px solid rgba(255,255,255,0.07);
   }
 
   /* Monospace meta — port / url */
@@ -157,7 +89,7 @@ html[data-theme="light"] {
            active:scale-[0.97];
   }
 
-  /* Danger ghost — stop unexpectedly / kill port */
+  /* Danger ghost — stop / kill port */
   .btn-danger-ghost {
     @apply text-status-error/70 text-sm font-medium px-2.5 py-1 rounded-[5px]
            transition-colors duration-[120ms]

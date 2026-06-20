@@ -82,7 +82,7 @@ export function GroupCard({ name, members, onLaunch, onStop, style }: GroupCardP
         "hover:bg-surface-card-hover hover:shadow-card-hover hover:-translate-y-px",
       )}
     >
-      {/* Accent violet rail — groups always use accent, not status color */}
+      {/* Accent green rail — groups always use accent color, not status color */}
       <span className="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-card bg-accent opacity-70 animate-rail-grow" />
 
       <div className="pl-5 pr-4 pt-4 pb-3.5">

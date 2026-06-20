@@ -30,7 +30,19 @@ public partial class MainWindow : Window
         // DispatcherTimer that drove the WPF card grid is no longer needed.
         Loaded += async (_, _) =>
         {
-            try { await WebView.EnsureCoreWebView2Async(); }
+            try
+            {
+                // Disable GPU compositing so WebView2's GPU compositor invalidates correctly
+                // on CSS variable (theme) changes. Without this, computed styles update but the
+                // compositor keeps painting stale colors even after a full page reload.
+                // Using --disable-gpu-compositing (not --disable-gpu) so Chromium still uses the
+                // GPU for rasterisation; only the compositor layer is forced to software.
+                var options = new CoreWebView2EnvironmentOptions(
+                    additionalBrowserArguments: "--disable-gpu-compositing");
+                var env = await CoreWebView2Environment.CreateAsync(
+                    browserExecutableFolder: null, userDataFolder: null, options: options);
+                await WebView.EnsureCoreWebView2Async(env);
+            }
             catch (Exception ex)
             {
                 MessageBox.Show(

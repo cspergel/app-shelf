@@ -1,5 +1,8 @@
-// Mirrors the JSON the C# bridge posts back. The bridge serializes AppShelf.Core
-// records with camelCase property names and enums as strings.
+// Mirrors the JSON the C# bridge posts back (AppShelfBridge.AppView). The bridge
+// serializes with camelCase property names and sends `status` as a string: either a
+// Core LaunchStatus enum name or "StoppedUnexpectedly" (the GUI-only crashed state,
+// emitted when a managed app's process exited unexpectedly). `tags` is always present
+// from the live bridge (possibly empty); the mock data path sets it too.
 
 export type LaunchStatus =
   | "Stopped"
