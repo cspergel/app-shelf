@@ -5,6 +5,9 @@ import { AppCard } from "@/components/app-card";
 import { GroupCard } from "@/components/group-card";
 import { PortDoctor } from "@/components/port-doctor";
 import { Toast, type ToastState } from "@/components/toast";
+import { AppDialog } from "@/components/app-dialog";
+import { ConfirmDialog, type ConfirmRequest } from "@/components/confirm-dialog";
+import { removeApp } from "@/lib/app-actions";
 import { cn } from "@/lib/utils";
 import type { AppView } from "@/lib/types";
 
@@ -36,37 +39,97 @@ function buildCardEntries(apps: AppView[]): CardEntry[] {
     }
   }
 
-  const entries: CardEntry[] = [];
+  // Build all entries, then sort favorites-first across both groups and standalones.
+  // A group counts as favorited when any of its members is favorited.
+  const entries: CardEntry[] = [
+    ...[...groups.entries()].map(
+      ([name, members]): CardEntry => ({ type: "group", name, members }),
+    ),
+    ...standalones.map((app): StandaloneView => ({ type: "standalone", app })),
+  ];
 
-  // Groups first (sorted by name)
-  for (const [name, members] of [...groups.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-    entries.push({ type: "group", name, members });
-  }
+  const isFav = (e: CardEntry): boolean =>
+    e.type === "group" ? e.members.some((m) => m.favorite) : e.app.favorite;
+  const sortName = (e: CardEntry): string =>
+    e.type === "group" ? e.name : e.app.name;
 
-  // Then standalones (favorites first, then alphabetical)
-  const sorted = [...standalones].sort((a, b) => {
-    if (a.favorite && !b.favorite) return -1;
-    if (!a.favorite && b.favorite) return 1;
-    return a.name.localeCompare(b.name);
+  entries.sort((a, b) => {
+    // 1. favorites first
+    const fa = isFav(a);
+    const fb = isFav(b);
+    if (fa !== fb) return fa ? -1 : 1;
+    // 2. stable secondary: groups before standalones within the same favorite tier
+    if (a.type !== b.type) return a.type === "group" ? -1 : 1;
+    // 3. alphabetical
+    return sortName(a).localeCompare(sortName(b));
   });
-  for (const app of sorted) {
-    entries.push({ type: "standalone", app });
-  }
 
   return entries;
 }
 
 // ── Root app ───────────────────────────────────────────────────────────────
 export default function App() {
-  const { apps, loading, error, connected, refresh, launch, stop } = useBridge();
+  const { apps, loading, error, connected, refresh, launch, stop, toggleFavorite } = useBridge();
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<Tab>("apps");
   const [toast, setToast] = useState<ToastState | null>(null);
+
+  // Add/Edit dialog: open + the app being edited (null = add mode).
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<AppView | null>(null);
+
+  // Remove confirmation: the pending request + the target app.
+  const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
+  const [pendingRemove, setPendingRemove] = useState<AppView | null>(null);
 
   const onToast = useCallback(
     (kind: "success" | "error", message: string) => setToast({ kind, message }),
     [],
   );
+
+  const openAdd = useCallback(() => {
+    setEditing(null);
+    setDialogOpen(true);
+  }, []);
+
+  const openEdit = useCallback((app: AppView) => {
+    setEditing(app);
+    setDialogOpen(true);
+  }, []);
+
+  const onSaved = useCallback(
+    (message: string) => {
+      onToast("success", message);
+      void refresh();
+    },
+    [onToast, refresh],
+  );
+
+  const requestRemove = useCallback((app: AppView) => {
+    setPendingRemove(app);
+    setConfirm({
+      title: `Remove "${app.name}"?`,
+      message:
+        "This removes it from AppShelf (your project files are not touched). " +
+        "If it's running, it will be stopped first.",
+      confirmLabel: "Remove",
+      danger: true,
+    });
+  }, []);
+
+  const doRemove = useCallback(async () => {
+    const app = pendingRemove;
+    setConfirm(null);
+    setPendingRemove(null);
+    if (!app) return;
+    try {
+      await removeApp(app.id);
+      onToast("success", `Removed "${app.name}"`);
+      void refresh();
+    } catch (e) {
+      onToast("error", e instanceof Error ? e.message : String(e));
+    }
+  }, [pendingRemove, onToast, refresh]);
 
   // Stats for the header badge
   const runningCount = apps.filter((a) => a.status === "Running").length;
@@ -180,6 +243,7 @@ export default function App() {
             </button>
 
             <button
+              onClick={openAdd}
               title="Add app"
               className={cn(
                 "inline-flex items-center gap-1.5 h-7 px-3 rounded-input",
@@ -215,10 +279,36 @@ export default function App() {
               }
             />
           ) : (
-            <CardGrid entries={entries} onLaunch={launch} onStop={stop} onToast={onToast} />
+            <CardGrid
+              entries={entries}
+              onLaunch={launch}
+              onStop={stop}
+              onToast={onToast}
+              onEdit={openEdit}
+              onRemove={requestRemove}
+              onFavorite={toggleFavorite}
+            />
           )}
         </main>
       )}
+
+      {/* Add / Edit dialog */}
+      <AppDialog
+        app={editing}
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        onSaved={onSaved}
+      />
+
+      {/* Remove confirmation */}
+      <ConfirmDialog
+        request={confirm}
+        onConfirm={() => void doRemove()}
+        onCancel={() => {
+          setConfirm(null);
+          setPendingRemove(null);
+        }}
+      />
 
       {/* Quick-action result toast (success + friendly failures) */}
       <Toast toast={toast} onDismiss={() => setToast(null)} />
@@ -261,11 +351,17 @@ function CardGrid({
   onLaunch,
   onStop,
   onToast,
+  onEdit,
+  onRemove,
+  onFavorite,
 }: {
   entries: CardEntry[];
   onLaunch: (id: string) => void;
   onStop: (id: string) => void;
   onToast: (kind: "success" | "error", message: string) => void;
+  onEdit: (app: AppView) => void;
+  onRemove: (app: AppView) => void;
+  onFavorite: (id: string, favorite: boolean) => void;
 }) {
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3">
@@ -282,6 +378,9 @@ function CardGrid({
               onLaunch={onLaunch}
               onStop={onStop}
               onToast={onToast}
+              onEdit={onEdit}
+              onRemove={onRemove}
+              onFavorite={onFavorite}
               style={style}
             />
           );
@@ -294,6 +393,9 @@ function CardGrid({
             onLaunch={onLaunch}
             onStop={onStop}
             onToast={onToast}
+            onEdit={onEdit}
+            onRemove={onRemove}
+            onFavorite={onFavorite}
             style={style}
           />
         );

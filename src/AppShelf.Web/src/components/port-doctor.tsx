@@ -7,6 +7,7 @@ import {
   RotateCcw,
   ShieldX,
   CircleDot,
+  Copy,
 } from "lucide-react";
 import { usePorts } from "@/lib/use-ports";
 import { ConfirmDialog, type ConfirmRequest } from "./confirm-dialog";
@@ -250,6 +251,7 @@ export function PortDoctor() {
                 onKill={doKill}
                 onReclaim={doReclaim}
                 onStopService={doStopService}
+                onToast={showToast}
               />
             ))}
           </div>
@@ -275,12 +277,14 @@ function PortRow({
   onKill,
   onReclaim,
   onStopService,
+  onToast,
 }: {
   row: PortRowView;
   first: boolean;
   onKill: (r: PortRowView) => void;
   onReclaim: (r: PortRowView) => void;
   onStopService: (r: PortRowView) => void;
+  onToast: (t: ToastState) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -387,13 +391,13 @@ function PortRow({
       </div>
 
       {/* Ancestry expand-row */}
-      {expanded && <AncestryPanel row={row} />}
+      {expanded && <AncestryPanel row={row} onToast={onToast} />}
     </div>
   );
 }
 
 // ── Ancestry chain panel ─────────────────────────────────────────────────────
-function AncestryPanel({ row }: { row: PortRowView }) {
+function AncestryPanel({ row, onToast }: { row: PortRowView; onToast: (t: ToastState) => void }) {
   // Root node (the port owner) followed by its parent chain — mirrors the WPF row.
   const nodes = [
     {
@@ -407,8 +411,40 @@ function AncestryPanel({ row }: { row: PortRowView }) {
     ...row.ancestry.map((a) => ({ ...a, root: false })),
   ];
 
+  // Build the same plaintext the panel shows, for the Copy button.
+  const ancestryText = (): string => {
+    const lines: string[] = [];
+    lines.push(`Port ${row.port} (${row.family}) — ${row.processName} pid ${row.pid}`);
+    lines.push(
+      `Started: ${row.startedAt ? new Date(row.startedAt).toLocaleString() : "unknown"}`,
+    );
+    if (row.exePath) lines.push(`Exe: ${row.exePath}`);
+    lines.push("");
+    lines.push("Process ancestry:");
+    nodes.forEach((n, i) => {
+      const marker = i === 0 ? "•" : "  ↳";
+      const dead = n.alive ? "" : " [dead]";
+      lines.push(`${marker} ${n.processName} pid ${n.pid}${dead}`);
+      if (n.commandLine) lines.push(`    cmd: ${n.commandLine}`);
+      if (n.exeDir) lines.push(`    exe dir: ${n.exeDir}`);
+    });
+    return lines.join("\n");
+  };
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(ancestryText());
+      onToast({ kind: "success", message: "Copied" });
+    } catch (e) {
+      onToast({ kind: "error", message: messageOf(e) });
+    }
+  };
+
   return (
-    <div className="animate-slide-down select-text border-top-hairline bg-surface-inset/40 px-5 py-3">
+    <div
+      className="animate-slide-down select-text border-top-hairline bg-surface-inset/40 px-5 py-3"
+      style={{ userSelect: "text", WebkitUserSelect: "text" }}
+    >
       <div className="mb-2 flex items-center gap-3 text-2xs text-text-faint">
         <span>
           Started:{" "}
@@ -421,9 +457,18 @@ function AncestryPanel({ row }: { row: PortRowView }) {
             Exe: <span className="font-mono text-text-secondary">{row.exePath}</span>
           </span>
         )}
+        <div className="flex-1" />
+        <button
+          onClick={copy}
+          title="Copy the full ancestry chain to the clipboard"
+          className="inline-flex shrink-0 items-center gap-1 rounded-[5px] px-2 py-1 text-2xs font-medium text-text-secondary transition-colors duration-[120ms] hover:bg-surface-card-hover hover:text-text-primary active:scale-[0.97] select-none"
+        >
+          <Copy className="h-3 w-3" />
+          Copy
+        </button>
       </div>
 
-      <div className="text-2xs font-medium uppercase tracking-[0.04em] text-text-faint mb-1.5">
+      <div className="text-2xs font-medium uppercase tracking-[0.04em] text-text-faint mb-1.5 select-none">
         Process ancestry
       </div>
       <div className="space-y-1.5">

@@ -132,6 +132,92 @@ export function mockStop(id: string): void {
   );
 }
 
+// ── Add / Edit dialog mock fallback ──────────────────────────────────────────
+// In a plain browser (no WebView2) the dialog is still fully demoable: pickFolder
+// returns a fake path, detectStack returns plausible suggestions, and add/update/
+// remove mutate the in-memory mock list (so the grid reflects the change on poll).
+
+export function mockPickFolder(): string {
+  return "C:\\dev\\sample-app";
+}
+
+export function mockDetectStack(_dir: string): {
+  framework: string | null;
+  cmd: string | null;
+  url: string | null;
+  port: number | null;
+  installCmd: string | null;
+  dir: string | null;
+  detected: boolean;
+} {
+  return {
+    framework: "Vite · React",
+    cmd: "npm run dev",
+    url: "http://localhost:5173",
+    port: 5173,
+    installCmd: "npm install",
+    dir: null,
+    detected: true,
+  };
+}
+
+/** Slugify a name the way Core's Slug.From roughly does (lowercase, hyphenated). */
+function mockSlug(name: string): string {
+  const base =
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "app";
+  // Ensure uniqueness against the current mock state.
+  let id = base;
+  let n = 2;
+  while (mockState.some((a) => a.id === id)) id = `${base}-${n++}`;
+  return id;
+}
+
+export function mockAddApp(app: AppView): AppView {
+  const created: AppView = { ...app, id: app.id || mockSlug(app.name) };
+  mockState = [...mockState, created];
+  return created;
+}
+
+export function mockUpdateApp(app: AppView): AppView {
+  mockState = mockState.map((a) => (a.id === app.id ? { ...a, ...app } : a));
+  return app;
+}
+
+export function mockRemoveApp(id: string): void {
+  mockState = mockState.filter((a) => a.id !== id);
+}
+
+/** Persist a favorite toggle into the in-memory mock state (survives the session). */
+export function mockSetFavorite(id: string, favorite: boolean): AppView | null {
+  let updated: AppView | null = null;
+  mockState = mockState.map((a) => {
+    if (a.id !== id) return a;
+    updated = { ...a, favorite };
+    return updated;
+  });
+  return updated;
+}
+
+export function mockListGroups(): string[] {
+  return [
+    ...new Set(
+      mockState
+        .map((a) => a.group)
+        .filter((g): g is string => !!g && g.trim().length > 0)
+        .map((g) => g.trim()),
+    ),
+  ].sort((a, b) => a.localeCompare(b));
+}
+
+export function mockReservedPorts(excludeId?: string): number[] {
+  return mockState
+    .filter((a) => a.port != null && a.id !== excludeId)
+    .map((a) => a.port as number);
+}
+
 // ── Port Doctor mock data ────────────────────────────────────────────────────
 // One row across each tier, plus a service-backed port and an ancestry chain with
 // a [dead] node — so the Ports view renders fully in a plain browser.

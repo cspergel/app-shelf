@@ -9,6 +9,8 @@ import {
   BookOpen,
   Link2,
   ClipboardCopy,
+  Pencil,
+  Trash2,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -28,6 +30,10 @@ export interface CardMenuProps {
   onResult: (kind: "success" | "error", message: string) => void;
   /** Tighter trigger for the cramped group-member row. */
   size?: "sm" | "md";
+  /** Open the Edit dialog for this app. When omitted, the Edit item is hidden. */
+  onEdit?: (app: AppView) => void;
+  /** Remove this app (caller confirms first). When omitted, the Remove item is hidden. */
+  onRemove?: (app: AppView) => void;
 }
 
 interface MenuItem {
@@ -39,6 +45,12 @@ interface MenuItem {
   run: () => Promise<QuickActionResult> | QuickActionResult;
   /** Success toast text when the action reports ok and gave no reason of its own. */
   okMessage: string;
+  /** A plain command item (no toast, no result) — used for Edit/Remove. */
+  command?: () => void;
+  /** Destructive styling (red) for the item. */
+  danger?: boolean;
+  /** Render a divider above this item. */
+  dividerBefore?: boolean;
 }
 
 /**
@@ -49,7 +61,7 @@ interface MenuItem {
 // Menu width (px) — used to right-align the portal popover under the trigger.
 const MENU_WIDTH = 184;
 
-export function CardMenu({ app, onResult, size = "md" }: CardMenuProps) {
+export function CardMenu({ app, onResult, size = "md", onEdit, onRemove }: CardMenuProps) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -148,12 +160,38 @@ export function CardMenu({ app, onResult, size = "md" }: CardMenuProps) {
       run: () => copyToClipboard(app.dir ?? ""),
       okMessage: "Copied folder path",
     },
+    // ── Manage (Edit / Remove) — only when wired ───────────────────────────
+    {
+      key: "edit",
+      label: "Edit",
+      icon: Pencil,
+      show: !!onEdit,
+      run: () => ({ ok: true, reason: null }),
+      okMessage: "",
+      command: () => onEdit?.(app),
+      dividerBefore: true,
+    },
+    {
+      key: "remove",
+      label: "Remove",
+      icon: Trash2,
+      show: !!onRemove,
+      run: () => ({ ok: true, reason: null }),
+      okMessage: "",
+      command: () => onRemove?.(app),
+      danger: true,
+    },
   ];
 
   const visible = items.filter((i) => i.show);
 
   const handle = async (item: MenuItem) => {
     setOpen(false);
+    // Command items (Edit/Remove) fire a callback — no bridge call, no toast here.
+    if (item.command) {
+      item.command();
+      return;
+    }
     const result = await item.run();
     if (result.ok) {
       onResult("success", result.reason ?? item.okMessage);
@@ -201,20 +239,31 @@ export function CardMenu({ app, onResult, size = "md" }: CardMenuProps) {
             visible.map((item) => {
               const Icon = item.icon;
               return (
-                <button
-                  key={item.key}
-                  role="menuitem"
-                  onClick={() => void handle(item)}
-                  className={cn(
-                    "flex w-full items-center gap-2.5 rounded-[5px] px-2.5 py-1.5",
-                    "text-xs font-medium text-text-secondary text-left",
-                    "transition-colors duration-[120ms]",
-                    "hover:bg-accent-muted hover:text-text-primary",
+                <div key={item.key}>
+                  {item.dividerBefore && (
+                    <div className="my-1 border-top-hairline" />
                   )}
-                >
-                  <Icon className="h-3.5 w-3.5 shrink-0 text-text-faint" />
-                  <span className="truncate">{item.label}</span>
-                </button>
+                  <button
+                    role="menuitem"
+                    onClick={() => void handle(item)}
+                    className={cn(
+                      "flex w-full items-center gap-2.5 rounded-[5px] px-2.5 py-1.5",
+                      "text-xs font-medium text-left",
+                      "transition-colors duration-[120ms]",
+                      item.danger
+                        ? "text-status-error/90 hover:bg-status-error/10 hover:text-status-error"
+                        : "text-text-secondary hover:bg-accent-muted hover:text-text-primary",
+                    )}
+                  >
+                    <Icon
+                      className={cn(
+                        "h-3.5 w-3.5 shrink-0",
+                        item.danger ? "text-status-error/80" : "text-text-faint",
+                      )}
+                    />
+                    <span className="truncate">{item.label}</span>
+                  </button>
+                </div>
               );
             })
             )}

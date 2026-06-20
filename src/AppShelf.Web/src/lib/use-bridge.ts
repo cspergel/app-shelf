@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke, hasBridge } from "./bridge";
 import { getMockApps, mockLaunch, mockStop } from "./mock-data";
+import { setFavorite as persistFavorite } from "./app-actions";
 import type { AppView } from "./types";
 
 const POLL_MS = 2000;
@@ -114,5 +115,27 @@ export function useBridge() {
     [bridge, refresh],
   );
 
-  return { ...state, refresh, launch, stop };
+  // Toggle the favorite flag: optimistic in-place update (no jarring rebuild), persist via
+  // the bridge (or mock), then refresh to reconcile. On failure, refresh restores truth.
+  const toggleFavorite = useCallback(
+    async (id: string, favorite: boolean) => {
+      setState((s) => ({
+        ...s,
+        apps: s.apps.map((a) => (a.id === id ? { ...a, favorite } : a)),
+      }));
+      try {
+        await persistFavorite(id, favorite);
+      } catch (e) {
+        setState((s) => ({
+          ...s,
+          error: e instanceof Error ? e.message : String(e),
+        }));
+      } finally {
+        void refresh();
+      }
+    },
+    [refresh],
+  );
+
+  return { ...state, refresh, launch, stop, toggleFavorite };
 }

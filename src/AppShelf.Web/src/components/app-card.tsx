@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Play, Square, ExternalLink, RotateCcw, Star, AlertTriangle, WifiOff } from "lucide-react";
 import { StatusDot, StatusRail, statusMeta } from "./status-dot";
 import { CardMenu } from "./card-menu";
@@ -10,12 +9,17 @@ interface AppCardProps {
   onLaunch: (id: string) => void;
   onStop: (id: string) => void;
   onToast: (kind: "success" | "error", message: string) => void;
+  onEdit?: (app: AppView) => void;
+  onRemove?: (app: AppView) => void;
+  onFavorite?: (id: string, favorite: boolean) => void;
   style?: React.CSSProperties;
 }
 
-export function AppCard({ app, onLaunch, onStop, onToast, style }: AppCardProps) {
+export function AppCard({ app, onLaunch, onStop, onToast, onEdit, onRemove, onFavorite, style }: AppCardProps) {
   const meta = statusMeta(app.status);
-  const [favored, setFavored] = useState(app.favorite);
+  const favored = app.favorite;
+
+  const toggleFavorite = () => onFavorite?.(app.id, !favored);
 
   const isStopped = app.status === "Stopped";
   const isRunning = app.status === "Running";
@@ -54,16 +58,17 @@ export function AppCard({ app, onLaunch, onStop, onToast, style }: AppCardProps)
             {app.name}
           </h3>
 
-          {/* Favorite star — glows gold when active, whisper-visible on hover */}
+          {/* Favorite star — always present (subtle outline when off), gold fill when active. */}
           <button
-            onClick={() => setFavored((f) => !f)}
+            onClick={toggleFavorite}
             className={cn(
-              "mt-0.5 shrink-0 transition-all duration-[120ms]",
+              "mt-0.5 shrink-0 transition-all duration-[120ms] hover:scale-110 active:scale-95",
               favored
-                ? "text-[#E5C04B] opacity-100"
-                : "text-text-faint opacity-0 group-hover:opacity-50 hover:!opacity-100",
+                ? "text-[#E5C04B]"
+                : "text-text-faint/60 hover:text-[#E5C04B]/80",
             )}
             title={favored ? "Remove favorite" : "Add to favorites"}
+            aria-pressed={favored}
           >
             <Star
               className="h-3.5 w-3.5"
@@ -71,8 +76,8 @@ export function AppCard({ app, onLaunch, onStop, onToast, style }: AppCardProps)
             />
           </button>
 
-          {/* Overflow menu — quick dev actions (terminal/editor/folder/.env/docs/copy) */}
-          <CardMenu app={app} onResult={onToast} />
+          {/* Overflow menu — quick dev actions + Edit / Remove */}
+          <CardMenu app={app} onResult={onToast} onEdit={onEdit} onRemove={onRemove} />
         </div>
 
         {/* ── META ROW: framework · port · url ──────────────────────────── */}

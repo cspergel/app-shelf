@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronRight, Play, Square, ExternalLink } from "lucide-react";
+import { ChevronRight, Play, Square, ExternalLink, Star } from "lucide-react";
 import { StatusDot, statusMeta } from "./status-dot";
 import { CardMenu } from "./card-menu";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,9 @@ interface GroupCardProps {
   onLaunch: (id: string) => void;
   onStop: (id: string) => void;
   onToast: (kind: "success" | "error", message: string) => void;
+  onEdit?: (app: AppView) => void;
+  onRemove?: (app: AppView) => void;
+  onFavorite?: (id: string, favorite: boolean) => void;
   style?: React.CSSProperties;
 }
 
@@ -59,7 +62,7 @@ function RoleChip({ role }: { role: string }) {
   );
 }
 
-export function GroupCard({ name, members, onLaunch, onStop, onToast, style }: GroupCardProps) {
+export function GroupCard({ name, members, onLaunch, onStop, onToast, onEdit, onRemove, onFavorite, style }: GroupCardProps) {
   const [expanded, setExpanded] = useState(true);
   const aggStatus = aggregateStatus(members);
   const aggMeta = statusMeta(aggStatus);
@@ -188,6 +191,24 @@ export function GroupCard({ name, members, onLaunch, onStop, onToast, style }: G
                     )}
                   />
 
+                  {/* Favorite star — always present (subtle when off), gold when active. */}
+                  <button
+                    onClick={() => onFavorite?.(member.id, !member.favorite)}
+                    className={cn(
+                      "shrink-0 transition-all duration-[120ms] hover:scale-110 active:scale-95",
+                      member.favorite
+                        ? "text-[#E5C04B]"
+                        : "text-text-faint/50 hover:text-[#E5C04B]/80",
+                    )}
+                    title={member.favorite ? "Remove favorite" : "Add to favorites"}
+                    aria-pressed={member.favorite}
+                  >
+                    <Star
+                      className="h-3 w-3"
+                      fill={member.favorite ? "currentColor" : "none"}
+                    />
+                  </button>
+
                   {/* Member identity: name + role chip, flex-1 with proper truncation */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 min-w-0">
@@ -222,9 +243,10 @@ export function GroupCard({ name, members, onLaunch, onStop, onToast, style }: G
                     </button>
                   </div>
 
-                  {/* Per-member ⋯ quick-actions menu (visible on member-row hover or when open) */}
-                  <div className="shrink-0 opacity-0 group-hover/member:opacity-100 transition-opacity duration-[120ms] focus-within:opacity-100">
-                    <CardMenu app={member} onResult={onToast} size="sm" />
+                  {/* Per-member ⋯ quick-actions menu — always present (quiet faint icon that
+                      brightens on hover, via CardMenu's own styling) so it's discoverable. */}
+                  <div className="shrink-0 opacity-70 group-hover/member:opacity-100 transition-opacity duration-[120ms] focus-within:opacity-100">
+                    <CardMenu app={member} onResult={onToast} size="sm" onEdit={onEdit} onRemove={onRemove} />
                   </div>
                 </div>
               );
