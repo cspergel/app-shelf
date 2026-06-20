@@ -79,7 +79,8 @@ public sealed class AppShelfBridge
     private sealed record AppView(
         string Id, string Name, string Url, string? Framework, bool Favorite,
         string? Group, string Role, int? Port, string Status, IReadOnlyList<string> Tags,
-        string? Dir, IReadOnlyList<string>? LogTail);
+        string? Dir, IReadOnlyList<string>? LogTail,
+        string? Cmd, bool PortFixed);
 
     /// <summary>Port Doctor row: a rich <see cref="PortReport"/> projection. Unlike the CLI's
     /// <see cref="AppShelf.Core.Process.PortReportJson"/> (flat, drops ancestry) this keeps the full
@@ -302,6 +303,18 @@ public sealed class AppShelfBridge
             case "setHotkey":
             {
                 var combo = OptionalString(args, "combo");
+                // Validate BEFORE persisting so a malformed or absurdly large combo never reaches
+                // config.json. An empty/null combo is the "clear → use default chain" path and is
+                // always allowed (no parse). A non-empty combo is length-capped and must parse.
+                if (!string.IsNullOrEmpty(combo))
+                {
+                    if (combo.Length > 100)
+                        throw new InvalidOperationException("Hotkey combo too long (max 100 characters).");
+                    if (AppShelf.App.Spotlight.HotkeyCombo.Parse(combo) is null)
+                        throw new InvalidOperationException(
+                            $"Invalid hotkey combo: cannot parse '{combo}'. Use a format like 'Ctrl+Shift+J'.");
+                }
+
                 // Persist first (atomic config write), then live-register. Win32 RegisterHotKey
                 // targets the overlay HWND, so marshal the register call onto the UI dispatcher
                 // (same pattern as PickFolder) — this dispatch body runs on a Task.Run thread.
@@ -340,7 +353,8 @@ public sealed class AppShelfBridge
                 : null;
             return new AppView(
                 a.Id, a.Name, a.Url, a.Framework, a.Favorite,
-                a.Group, a.Role, a.Port, status, a.Tags, a.Dir, logTail);
+                a.Group, a.Role, a.Port, status, a.Tags, a.Dir, logTail,
+                a.Cmd, a.PortFixed);
         })).ToArray();
         return Task.WhenAll(tasks).GetAwaiter().GetResult();
     }
@@ -690,7 +704,8 @@ public sealed class AppShelfBridge
     /// list returns) so the JS side can splice the created/updated row in if it wants.</summary>
     private AppView ProjectApp(AppEntry a) =>
         new(a.Id, a.Name, a.Url, a.Framework, a.Favorite,
-            a.Group, a.Role, a.Port, StatusFor(a), a.Tags, a.Dir, LogTail: null);
+            a.Group, a.Role, a.Port, StatusFor(a), a.Tags, a.Dir, LogTail: null,
+            Cmd: a.Cmd, PortFixed: a.PortFixed);
 
     /// <summary>Normalize a role string to one of the allowed <see cref="AppRoles"/> values,
     /// defaulting to "other".</summary>
@@ -758,7 +773,17 @@ public sealed class AppShelfBridge
     private string StatusFor(AppEntry entry)
     {
         if (_service.DidManagedAppExit(entry))
-            return StoppedUnexpectedly;
+        {
+            // The managed process exited unexpectedly (a crash). But if the port is live AGAIN — an
+            // external relaunch, a reclaim, or a manual restart healed it — the crash is no longer
+            // true. Clear the stale managed entry so status reports correctly from here on, then
+            // fall through to the normal StatusOf path. Use the same 150 ms fast-probe budget as the
+            // poll so a healed-crash app costs at most one extra probe (~150 ms) per ~2 s cycle.
+            if (ProcessManager.IsPortListening(entry.Url, FastProbeTimeoutMs))
+                _service.ClearManagedExit(entry);
+            else
+                return StoppedUnexpectedly;
+        }
 
         var status = _service.StatusOf(entry, FastProbeTimeoutMs);
         if (status == LaunchStatus.PortInUse)
