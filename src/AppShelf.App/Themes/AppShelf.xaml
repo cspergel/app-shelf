@@ -4,13 +4,15 @@
                     xmlns:po="http://schemas.microsoft.com/winfx/2006/xaml/presentation/options"
                     mc:Ignorable="po">
 
-    <!-- ============ Color tokens ============ -->
-    <Color x:Key="ColorSurfaceWindow">#17181C</Color>
-    <Color x:Key="ColorSurfaceCard">#1F2127</Color>
-    <Color x:Key="ColorSurfaceCardHover">#23262D</Color>
-    <Color x:Key="ColorSurfaceElevated">#262932</Color>
-    <Color x:Key="ColorAccent">#7C6AEF</Color>
-    <Color x:Key="ColorAccentHover">#8F7FF5</Color>
+    <!-- ============ Color tokens (Ostara palette — emerald + slate) ============ -->
+    <!-- Surfaces: dark slate ramp matching the React web UI -->
+    <Color x:Key="ColorSurfaceWindow">#161C24</Color>
+    <Color x:Key="ColorSurfaceCard">#212B36</Color>
+    <Color x:Key="ColorSurfaceCardHover">#2D3844</Color>
+    <Color x:Key="ColorSurfaceElevated">#1A2027</Color>
+    <!-- Accent: emerald (was violet #7C6AEF) -->
+    <Color x:Key="ColorAccent">#00AB55</Color>
+    <Color x:Key="ColorAccentHover">#5BE584</Color>
     <Color x:Key="ColorRunning">#34C98E</Color>
     <Color x:Key="ColorStarting">#E5A84B</Color>
     <Color x:Key="ColorStopped">#565B66</Color>
@@ -22,12 +24,13 @@
     <SolidColorBrush x:Key="SurfaceCard" Color="{StaticResource ColorSurfaceCard}" po:Freeze="True"/>
     <SolidColorBrush x:Key="SurfaceCardHover" Color="{StaticResource ColorSurfaceCardHover}" po:Freeze="True"/>
     <SolidColorBrush x:Key="SurfaceElevated" Color="{StaticResource ColorSurfaceElevated}" po:Freeze="True"/>
-    <SolidColorBrush x:Key="BorderHairline" Color="#FFFFFF" Opacity="0.08" po:Freeze="True"/>
-    <SolidColorBrush x:Key="TextPrimary" Color="#E8EAED" po:Freeze="True"/>
-    <SolidColorBrush x:Key="TextSecondary" Color="#9BA1AB" po:Freeze="True"/>
-    <SolidColorBrush x:Key="TextFaint" Color="#6B717C" po:Freeze="True"/>
+    <SolidColorBrush x:Key="BorderHairline" Color="#FFFFFF" Opacity="0.07" po:Freeze="True"/>
+    <SolidColorBrush x:Key="TextPrimary" Color="#F9FAFB" po:Freeze="True"/>
+    <SolidColorBrush x:Key="TextSecondary" Color="#919EAB" po:Freeze="True"/>
+    <SolidColorBrush x:Key="TextFaint" Color="#637381" po:Freeze="True"/>
     <SolidColorBrush x:Key="Accent" Color="{StaticResource ColorAccent}" po:Freeze="True"/>
     <SolidColorBrush x:Key="AccentHover" Color="{StaticResource ColorAccentHover}" po:Freeze="True"/>
+    <!-- AccentMuted: emerald at 15% — used for selected result row background -->
     <SolidColorBrush x:Key="AccentMuted" Color="{StaticResource ColorAccent}" Opacity="0.15" po:Freeze="True"/>
     <SolidColorBrush x:Key="StatusRunning" Color="{StaticResource ColorRunning}" po:Freeze="True"/>
     <SolidColorBrush x:Key="StatusStarting" Color="{StaticResource ColorStarting}" po:Freeze="True"/>
@@ -111,7 +114,7 @@
         </Setter>
     </Style>
 
-    <!-- Violet primary -->
+    <!-- Emerald primary -->
     <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource ButtonBase}">
         <Setter Property="Background" Value="{StaticResource Accent}"/>
         <Setter Property="Foreground" Value="White"/>
@@ -164,7 +167,7 @@
         <Setter Property="FontSize" Value="11"/>
         <Setter Property="Foreground" Value="{StaticResource TextFaint}"/>
     </Style>
-    <!-- Violet-tinted tag chip: keep accent bg; reduce radius to 3px for restraint -->
+    <!-- Emerald-tinted tag chip: accent bg at 15% opacity; radius 3px -->
     <Style x:Key="TagChipBorder" TargetType="Border" BasedOn="{StaticResource ChipBorder}">
         <Setter Property="Background" Value="{StaticResource AccentMuted}"/>
         <Setter Property="Padding" Value="5,2"/>
@@ -177,7 +180,7 @@
         <Setter Property="BorderBrush" Value="{StaticResource BorderHairline}"/>
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="8,6"/>
-        <Setter Property="CaretBrush" Value="{StaticResource TextPrimary}"/>
+        <Setter Property="CaretBrush" Value="{StaticResource Accent}"/>
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TextBox">
