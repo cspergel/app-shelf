@@ -194,4 +194,67 @@ public sealed class ConfigStoreTests : IDisposable
         Assert.Single(loaded.Apps);
         Assert.Equal("x", loaded.Apps[0].Id);
     }
+
+    /// <summary>Phase 3 B3: a write that hits an access denial (here a read-only target file) must
+    /// surface a readable "Access denied" message — NOT the misleading "locked by another process"
+    /// retry message, and NOT a raw UnauthorizedAccessException. UnauthorizedAccessException does
+    /// not inherit from IOException, so WithRetry must catch it explicitly.</summary>
+    [Fact]
+    public void Save_ToReadOnlyPath_ThrowsInvalidOperationExceptionWithAccessDeniedMessage()
+    {
+        var store = NewStore();
+        // Create the config first (writable), then mark it read-only so the next Save's
+        // File.Replace / File.Move onto it is denied.
+        store.Save(new AppConfig());
+        File.SetAttributes(_path, FileAttributes.ReadOnly);
+
+        try
+        {
+            var config = new AppConfig();
+            config.Apps.Add(Entry("Blocked", cmd: "npm run dev"));
+
+            var ex = Assert.Throws<InvalidOperationException>(() => store.Save(config));
+            Assert.Contains("Access denied", ex.Message);
+            Assert.IsType<UnauthorizedAccessException>(ex.InnerException);
+        }
+        finally
+        {
+            // Clear the read-only bit so the Dispose cleanup can delete the temp directory.
+            File.SetAttributes(_path, FileAttributes.Normal);
+        }
+    }
+
+    /// <summary>Phase 3 C4: the atomic-regroup rewrite batches all changes into ONE
+    /// <see cref="ConfigStore.Save"/>. This validates the primitive that makes that safe — mutating
+    /// several apps in a loaded config and saving once persists every change (the old per-app
+    /// UpdateApp loop did N independent saves that could interleave under contention).</summary>
+    [Fact]
+    public void Save_BatchUpdateOfMultipleApps_PersistsAllChangesAtomically()
+    {
+        var store = NewStore();
+        var config = new AppConfig();
+        config.Apps.Add(new AppEntry { Id = "a", Name = "A", Url = "http://a", Cmd = "c", Dir = "d" });
+        config.Apps.Add(new AppEntry { Id = "b", Name = "B", Url = "http://b", Cmd = "c", Dir = "d" });
+        config.Apps.Add(new AppEntry { Id = "c", Name = "C", Url = "http://c", Cmd = "c", Dir = "d" });
+        store.Save(config);
+
+        // Mutate all three in-memory (the shape ApplyRegroup uses), then save ONCE.
+        var loaded = store.Load();
+        foreach (var app in loaded.Apps)
+        {
+            app.Group = "team";
+            app.Role = AppRoles.Backend;
+            app.Order = 1;
+        }
+        store.Save(loaded);
+
+        var reloaded = store.Load();
+        Assert.Equal(3, reloaded.Apps.Count);
+        Assert.All(reloaded.Apps, a =>
+        {
+            Assert.Equal("team", a.Group);
+            Assert.Equal(AppRoles.Backend, a.Role);
+            Assert.Equal(1, a.Order);
+        });
+    }
 }

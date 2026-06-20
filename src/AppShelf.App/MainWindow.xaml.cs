@@ -62,8 +62,9 @@ public partial class MainWindow : Window
             {
                 MessageBox.Show(
                     $"The web UI host (WebView2) could not start:\n\n{ex.Message}\n\n" +
-                    "Ensure the WebView2 Runtime is installed.",
-                    "AppShelf", MessageBoxButton.OK, MessageBoxImage.Error);
+                    "Ensure the WebView2 Runtime is installed. Download it from:\n" +
+                    "https://developer.microsoft.com/microsoft-edge/webview2/",
+                    "AppShelf — WebView2 Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         };
     }
@@ -71,10 +72,45 @@ public partial class MainWindow : Window
     private void WebView_OnInitializationCompleted(object? sender, CoreWebView2InitializationCompletedEventArgs e)
     {
         if (!e.IsSuccess || WebView.CoreWebView2 is null)
+        {
+            // A silent blank window leaves a first-run user (esp. one missing the WebView2 runtime)
+            // with no idea why nothing rendered. Surface the failure reason and the download link.
+            var detail = e.InitializationException?.Message ?? "Unknown error.";
+            MessageBox.Show(
+                $"The web UI host (WebView2) failed to initialize:\n\n{detail}\n\n" +
+                "Ensure the WebView2 Runtime is installed. Download it from:\n" +
+                "https://developer.microsoft.com/microsoft-edge/webview2/",
+                "AppShelf — WebView2 Error", MessageBoxButton.OK, MessageBoxImage.Error);
             return;
+        }
 
         // Wire the JS↔C# bridge before navigating so the page can call into Core immediately.
         _bridge = new AppShelfBridge(WebView, _service);
+
+        // Origin lock: keep the embedded WebView2 pinned to our own UI origin. The bridge listens on
+        // the DOM WebMessageReceived event (not origin-checked), so a bundled supply-chain dep that
+        // pushed a window.location redirect to an external page could keep posting bridge messages.
+        // Cancel any navigation away from the dev server (DEBUG) / virtual host (RELEASE). Registered
+        // before the initial Navigate below, so the first load is subject to (and passes) the check.
+        WebView.CoreWebView2.NavigationStarting += (_, navArgs) =>
+        {
+#if DEBUG
+            // Allow the Vite dev server and any localhost reload (HMR full-page reloads navigate
+            // within http://localhost:5199; other localhost ports are harmless in DEBUG).
+            if (!navArgs.Uri.StartsWith(DevServerUrl, StringComparison.OrdinalIgnoreCase) &&
+                !navArgs.Uri.StartsWith("http://localhost:", StringComparison.OrdinalIgnoreCase))
+            {
+                navArgs.Cancel = true;
+            }
+#else
+            // Allow only the virtual host the embedded UI is served from.
+            if (!navArgs.Uri.StartsWith($"https://{WebUiAssets.VirtualHost}/",
+                StringComparison.OrdinalIgnoreCase))
+            {
+                navArgs.Cancel = true;
+            }
+#endif
+        };
 
         // If the hotkey delegates were already supplied (App.xaml.cs runs before WebView2 init
         // completes), hand them to the freshly-constructed bridge now.
