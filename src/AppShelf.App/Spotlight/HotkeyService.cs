@@ -22,6 +22,7 @@ public sealed class HotkeyService : IDisposable
 
     private readonly Window _overlayWindow;
     private readonly Action _toggleOverlay;
+    private readonly Action<string, string>? _notify;
     private readonly IntPtr _hwnd;
     private readonly HwndSource? _src;
     private bool _hasRegistration;
@@ -38,10 +39,15 @@ public sealed class HotkeyService : IDisposable
     /// (call <c>new WindowInteropHelper(overlayWindow).EnsureHandle()</c> before this ctor).</param>
     /// <param name="toggleOverlay">Invoked on the UI thread when the hotkey fires.</param>
     /// <param name="configuredCombo">The user's saved combo, or null/blank for the default chain.</param>
-    public HotkeyService(Window overlayWindow, Action toggleOverlay, string? configuredCombo = null)
+    /// <param name="notify">Optional (title, message) callback invoked when NO hotkey could be
+    /// registered (both default-chain candidates failed). Wired to the tray balloon so the failure
+    /// is visible instead of only a Debug line. Null = silent (the previous behaviour).</param>
+    public HotkeyService(Window overlayWindow, Action toggleOverlay,
+        string? configuredCombo = null, Action<string, string>? notify = null)
     {
         _overlayWindow = overlayWindow;
         _toggleOverlay = toggleOverlay;
+        _notify = notify;
         _hwnd = new WindowInteropHelper(overlayWindow).Handle;
 
         _src = HwndSource.FromHwnd(_hwnd);
@@ -120,6 +126,10 @@ public sealed class HotkeyService : IDisposable
         Debug.WriteLine(
             "AppShelf: could not register Alt+Space or Ctrl+Alt+Space — both are unavailable. " +
             "Use the tray \"Search…\" item to open the overlay.");
+        // Make the failure visible (Debug.WriteLine is invisible in release / to the user).
+        _notify?.Invoke("AppShelf — Hotkey Unavailable",
+            "Neither Alt+Space nor Ctrl+Alt+Space could be registered (they may be claimed by another app). " +
+            "Use the tray \"Search…\" item to open the overlay, or change the hotkey in Hotkey Settings.");
         return false;
     }
 

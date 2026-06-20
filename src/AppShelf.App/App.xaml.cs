@@ -101,7 +101,10 @@ public partial class App : Application
             _spotlight = new SpotlightWindow(spotlightVm);
             new WindowInteropHelper(_spotlight).EnsureHandle();
 
-            _hotkey = new HotkeyService(_spotlight, ToggleSpotlight, _service.GetHotkey());
+            // _tray is constructed above before _hotkey, so _tray.ShowBalloon is available here to
+            // surface a "could not register the hotkey" balloon when both default-chain combos fail.
+            _hotkey = new HotkeyService(_spotlight, ToggleSpotlight, _service.GetHotkey(),
+                notify: _tray.ShowBalloon);
 
             // Hand the hotkey live-register + active-read delegates to the main window so the web UI
             // hotkey-settings panel (via the bridge's setHotkey/getHotkey) can drive HotkeyService.
@@ -150,14 +153,26 @@ public partial class App : Application
     private static string ErrorLogPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AppShelf", "error.log");
 
+    private const long ErrorLogMaxBytes = 1 * 1024 * 1024; // 1 MB
+
     /// <summary>Appends the full exception (with stack trace) to %APPDATA%\AppShelf\error.log so a
-    /// user can attach it to a bug report. Logging must never throw.</summary>
+    /// user can attach it to a bug report. Rotates to error.log.1 when the file exceeds 1 MB so a
+    /// crash loop can never fill the disk. Logging must never throw.</summary>
     private static void LogError(Exception? ex)
     {
         try
         {
             var path = ErrorLogPath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+            // Rotate if the log has grown past the size limit (overwrite any prior .1).
+            if (File.Exists(path) && new FileInfo(path).Length >= ErrorLogMaxBytes)
+            {
+                var rotated = path + ".1";
+                if (File.Exists(rotated)) File.Delete(rotated);
+                File.Move(path, rotated);
+            }
+
             File.AppendAllText(path,
                 $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {ex}{Environment.NewLine}{Environment.NewLine}");
         }
