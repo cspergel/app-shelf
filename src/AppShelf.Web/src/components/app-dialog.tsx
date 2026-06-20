@@ -58,7 +58,7 @@ function fromApp(app: AppView): FormState {
   return {
     name: app.name,
     dir: app.dir ?? "",
-    cmd: "", // not in AppView projection — left blank, user re-detects or types
+    cmd: app.cmd ?? "",
     url: app.url,
     installCmd: "",
     framework: app.framework ?? "",
@@ -68,7 +68,7 @@ function fromApp(app: AppView): FormState {
     open: "browser",
     favorite: app.favorite,
     port: app.port != null ? String(app.port) : "",
-    portFixed: false,
+    portFixed: app.portFixed ?? false,
   };
 }
 

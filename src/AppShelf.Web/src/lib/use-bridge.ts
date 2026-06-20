@@ -32,6 +32,9 @@ function appsChanged(prev: AppView[], next: AppView[]): boolean {
       p.url !== n.url ||
       p.role !== n.role
     ) return true;
+    // A crashed app's log tail arriving (or its length changing) must trigger a re-render so the
+    // log panel can auto-surface. -1 sentinel makes null-vs-present a detectable transition.
+    if ((p.logTail?.length ?? -1) !== (n.logTail?.length ?? -1)) return true;
   }
   return false;
 }

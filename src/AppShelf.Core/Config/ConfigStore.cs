@@ -143,12 +143,22 @@ public sealed class ConfigStore
 
     // --- polite file-locking: retry briefly, then surface a clear error ---
 
-    private static T WithRetry<T>(Func<T> action)
+    private T WithRetry<T>(Func<T> action)
     {
         IOException? last = null;
         for (var attempt = 0; attempt < RetryAttempts; attempt++)
         {
             try { return action(); }
+            catch (UnauthorizedAccessException ex)
+            {
+                // Access denied is a structural problem (locked-down %APPDATA%, a corrupted ACL, or
+                // a read-only file), NOT a transient lock — retrying cannot help, so surface a clear
+                // message immediately. UnauthorizedAccessException does NOT inherit from IOException
+                // in .NET, so this arm must come first to win over the retry-on-lock arm below.
+                throw new InvalidOperationException(
+                    $"Access denied to '{FilePath}'. Check that AppShelf has permission to write to " +
+                    "%APPDATA%\\AppShelf\\.", ex);
+            }
             catch (IOException ex)
             {
                 last = ex;
@@ -161,6 +171,6 @@ public sealed class ConfigStore
             "Close it and try again.", last);
     }
 
-    private static void WithRetry(Action action) =>
+    private void WithRetry(Action action) =>
         WithRetry<object?>(() => { action(); return null; });
 }

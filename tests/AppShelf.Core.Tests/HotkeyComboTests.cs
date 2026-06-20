@@ -69,4 +69,15 @@ public class HotkeyComboTests
         Assert.Equal(HotkeyCombo.MOD_CONTROL | HotkeyCombo.MOD_SHIFT, parsed!.Value.modifiers);
         Assert.Equal((uint)KeyInterop.VirtualKeyFromKey(Key.J), parsed.Value.vk);
     }
+
+    /// <summary>Documents the contract the bridge's <c>setHotkey</c> length-cap relies on: an
+    /// absurdly long combo has no valid single key token and therefore never parses. The 100-char
+    /// cap itself lives in the bridge (Phase 3 A3); this is the Core-level guard behind it.</summary>
+    [Fact]
+    public void Parse_WithVeryLongInput_ReturnsNull()
+    {
+        var longInput = new string('J', 150);
+
+        Assert.Null(HotkeyCombo.Parse(longInput));
+    }
 }

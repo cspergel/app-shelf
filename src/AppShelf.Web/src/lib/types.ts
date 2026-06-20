@@ -26,6 +26,14 @@ export interface AppView {
   tags?: string[];
   /** Working directory; null for URL-only apps (dir-dependent quick actions are hidden). */
   dir?: string | null;
+  /** Captured stdout/stderr tail — populated by the bridge ONLY when status is
+   * "StoppedUnexpectedly" (a crash), so the log panel can auto-surface without an extra poll. */
+  logTail?: string[];
+  /** The launch command; null/blank for URL-only apps. Round-tripped into the edit dialog so a
+   * save without changes does not silently convert a local app to URL-only. */
+  cmd?: string | null;
+  /** Whether the app's port is pinned (user-fixed) rather than auto-allocated. */
+  portFixed?: boolean;
 }
 
 /** Result shape the quick-action bridge methods resolve with (mirrors C# { ok, reason }). */

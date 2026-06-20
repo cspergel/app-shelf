@@ -21,8 +21,15 @@
     <AssemblyName>AppShelf</AssemblyName>
     <RootNamespace>AppShelf.App</RootNamespace>
     <ApplicationIcon>Resources\appshelf.ico</ApplicationIcon>
-    <!-- Static WebView2 loader keeps single-file publish working later. -->
+    <!-- Static WebView2 loader keeps single-file publish working. -->
     <WebView2LoaderPreference>Static</WebView2LoaderPreference>
+    <!-- Single-file self-contained publish. With these baked in, the documented release command
+         (dotnet publish src/AppShelf.App -c Release -r win-x64, self-contained) produces ONE
+         self-extracting AppShelf.exe (embedded webui.zip plus native WebView2 loader bundled).
+         These are publish-only properties: no effect on dotnet build / dotnet test.
+         IncludeNativeLibrariesForSelfExtract bundles the static WebView2 loader into the exe. -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   </PropertyGroup>
 
   <ItemGroup>

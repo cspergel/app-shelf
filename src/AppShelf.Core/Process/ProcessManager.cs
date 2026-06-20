@@ -20,6 +20,13 @@ public sealed class ProcessManager : IDisposable
 
     private readonly ConcurrentDictionary<string, RunningApp> _running = new(StringComparer.Ordinal);
 
+    // Claim set that serializes concurrent Start() calls for the SAME id. TryAdd is atomic, so only
+    // one caller can hold the claim at a time — closing the TOCTOU window between the
+    // already-running guard and the _running[id] = running assignment. The claim is released on
+    // EVERY exit path of Start (success and every throw) via the try/finally below; a leaked claim
+    // would make the app look "already starting" forever.
+    private readonly ConcurrentDictionary<string, byte> _starting = new(StringComparer.Ordinal);
+
     /// <summary>Spawns the app's command in its directory, captures output, and assigns it to a job.</summary>
     public RunningApp Start(AppEntry entry)
     {
@@ -27,53 +34,73 @@ public sealed class ProcessManager : IDisposable
             throw new InvalidOperationException($"App '{entry.Id}' is URL-only and has no command to start.");
         if (string.IsNullOrWhiteSpace(entry.Dir))
             throw new InvalidOperationException($"App '{entry.Id}' has no working directory.");
-        if (_running.ContainsKey(entry.Id))
-            throw new InvalidOperationException($"App '{entry.Id}' is already running in this session.");
 
-        var plan = LaunchPlanBuilder.Build(entry);
-
-        var psi = new ProcessStartInfo
-        {
-            FileName = "cmd.exe",
-            Arguments = "/c " + plan.Command,
-            WorkingDirectory = entry.Dir,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-        foreach (var (key, value) in plan.Environment)
-            psi.Environment[key] = value;
-
-        var process = new System.Diagnostics.Process { StartInfo = psi, EnableRaisingEvents = true };
-        var running = new RunningApp(entry.Id, process);
-
-        process.OutputDataReceived += (_, e) => running.AppendLog(e.Data);
-        process.ErrorDataReceived += (_, e) => running.AppendLog(e.Data);
-
-        if (!process.Start())
-            throw new InvalidOperationException($"Failed to start app '{entry.Id}'.");
+        // Atomically claim the start slot for this id. If TryAdd fails, a concurrent Start already
+        // owns it — reject immediately. This closes the TOCTOU window where two concurrent Start
+        // calls both passed a plain ContainsKey guard and spawned a second process tree (leaking the
+        // first RunningApp/job when it was overwritten in _running). The claim is released in the
+        // finally below on EVERY exit path (success and every throw).
+        if (!_starting.TryAdd(entry.Id, 0))
+            throw new InvalidOperationException($"App '{entry.Id}' is already starting in this session.");
 
         try
         {
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
+            if (_running.ContainsKey(entry.Id))
+                throw new InvalidOperationException($"App '{entry.Id}' is already running in this session.");
 
-            // Assign to a kill-on-close job BEFORE the dev server spawns its children.
-            running.Job.AssignProcess(process);
+            var plan = LaunchPlanBuilder.Build(entry);
+
+            var psi = new ProcessStartInfo
+            {
+                FileName = "cmd.exe",
+                Arguments = "/c " + plan.Command,
+                WorkingDirectory = entry.Dir,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            foreach (var (key, value) in plan.Environment)
+                psi.Environment[key] = value;
+
+            var process = new System.Diagnostics.Process { StartInfo = psi, EnableRaisingEvents = true };
+            var running = new RunningApp(entry.Id, process);
+
+            process.OutputDataReceived += (_, e) => running.AppendLog(e.Data);
+            process.ErrorDataReceived += (_, e) => running.AppendLog(e.Data);
+
+            if (!process.Start())
+                throw new InvalidOperationException($"Failed to start app '{entry.Id}'.");
+
+            try
+            {
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+
+                // Assign to a kill-on-close job BEFORE the dev server spawns its children.
+                running.Job.AssignProcess(process);
+            }
+            catch
+            {
+                // The process is alive but never made it into the job (e.g. AssignProcessToJobObject
+                // failed). Don't leak it outside the job — it would hold its port with no way to stop
+                // it. Kill the tree directly, dispose the (empty) job, then surface the failure.
+                try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { /* best effort */ }
+                running.Dispose();
+                throw;
+            }
+
+            // Direct assign (not TryAdd) is safe: the _starting claim serialized concurrent Start
+            // calls, so no other Start for this id can reach here while we hold the claim.
+            _running[entry.Id] = running;
+            return running;
         }
-        catch
+        finally
         {
-            // The process is alive but never made it into the job (e.g. AssignProcessToJobObject
-            // failed). Don't leak it outside the job — it would hold its port with no way to stop
-            // it. Kill the tree directly, dispose the (empty) job, then surface the failure.
-            try { if (!process.HasExited) process.Kill(entireProcessTree: true); } catch { /* best effort */ }
-            running.Dispose();
-            throw;
+            // Release the claim on every path out of Start: success (entry now in _running) and any
+            // throw above. A leaked claim would make the app appear "already starting" forever.
+            _starting.TryRemove(entry.Id, out _);
         }
-
-        _running[entry.Id] = running;
-        return running;
     }
 
     /// <summary>Stops an app this manager launched: closes the job (kills the tree), frees the port.</summary>
@@ -96,6 +123,21 @@ public sealed class ProcessManager : IDisposable
     /// launched this session, was cleanly stopped, or is still alive.</summary>
     public bool IsManagedAndExited(string id) =>
         _running.TryGetValue(id, out var r) && r.HasExited;
+
+    /// <summary>
+    /// Remove a stale crashed entry from managed tracking. Called by the bridge when a port-alive
+    /// probe reveals the crash has been externally healed (the server was relaunched outside
+    /// AppShelf). Only removes the entry when it exists AND its process has exited — a still-living
+    /// managed process is never dropped. Safe to call for an id that is not tracked (no-op).
+    /// <see cref="System.Collections.Concurrent.ConcurrentDictionary{TKey,TValue}.TryRemove(TKey, out TValue)"/>
+    /// is atomic, so a concurrent Stop racing this is benign (whoever removes first wins; the other
+    /// is a no-op).
+    /// </summary>
+    public void ClearManagedExit(string id)
+    {
+        if (_running.TryGetValue(id, out var r) && r.HasExited)
+            _running.TryRemove(id, out _);
+    }
 
     /// <summary>
     /// Live OS process ids of the dev servers this manager launched (skipping any that have
@@ -357,6 +399,8 @@ public sealed class ProcessManager : IDisposable
     /// <summary>A live process plus its kill-on-close job and a bounded log ring buffer.</summary>
     public sealed class RunningApp : IDisposable
     {
+        private const int MaxLogLineLength = 4096;
+
         private readonly object _logLock = new();
         private readonly Queue<string> _log = new(LogTailLines);
 
@@ -387,6 +431,11 @@ public sealed class ProcessManager : IDisposable
         {
             if (line is null)
                 return;
+            // Cap per-line length so a pathological emitter (a minified bundle dumped on one stderr
+            // line, a huge single-line stack trace) can't bloat the ring buffer to hundreds of MB —
+            // LogTailLines bounds the COUNT, this bounds each line's memory.
+            if (line.Length > MaxLogLineLength)
+                line = string.Concat(line.AsSpan(0, MaxLogLineLength), "…");
             lock (_logLock)
             {
                 if (_log.Count >= LogTailLines)

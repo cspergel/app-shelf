@@ -3,11 +3,11 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Threading;
-using AppShelf.App.Dialogs;
 using AppShelf.App.Services;
 using AppShelf.App.Spotlight;
 using AppShelf.App.Tray;
 using AppShelf.App.ViewModels;
+using AppShelf.App.Web;
 using Forms = System.Windows.Forms;
 
 namespace AppShelf.App;
@@ -29,6 +29,12 @@ public partial class App : Application
     private MainWindow _window = null!;
     private SpotlightWindow _spotlight = null!;
     private HotkeyService? _hotkey;
+
+    // Last-known app status snapshot for the tray quick-launch submenu. Written by the bridge's
+    // post-poll callback (off the UI thread) and read by TrayIconService.OnMenuOpening on the
+    // WinForms message-pump thread. `volatile` guarantees the menu thread sees the latest write;
+    // the assignment is a single atomic reference replace, so no lock is needed.
+    private volatile IReadOnlyList<TrayAppView> _traySnapshot = Array.Empty<TrayAppView>();
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -69,12 +75,25 @@ public partial class App : Application
                 hotkey: ShowHotkeySettings,
                 add: AddFromTray,
                 ports: ShowPorts,
-                quit: QuitApp);
+                quit: QuitApp,
+                getAppSnapshot: () => _traySnapshot,
+                launchApp: LaunchFromTray,
+                stopApp: StopFromTray);
 
             var viewModel = new MainViewModel(_service, _dialogs, ShowPorts, _tray.ShowBalloon);
 
             _window = new MainWindow(viewModel, _service);
             MainWindow = _window; // so modal dialogs can anchor to it
+
+            // Feed the tray quick-launch snapshot from each bridge status poll (~2s). The bridge is
+            // built lazily after WebView2 init, so MainWindow stores the callback and forwards it
+            // when the bridge exists (same pattern as the hotkey delegates). The callback runs on a
+            // background thread; the volatile reference assignment is the thread-safety boundary.
+            _window.SetOnAppsPolled(views => _traySnapshot = views
+                .Select(v => new TrayAppView(
+                    v.Id, v.Name, v.Status, v.Favorite,
+                    v.Status is "Running" or "Starting"))
+                .ToArray());
 
             // Create the Spotlight overlay HIDDEN. EnsureHandle materialises the HWND without
             // showing the window — required before HotkeyService can RegisterHotKey against it.
@@ -82,7 +101,15 @@ public partial class App : Application
             _spotlight = new SpotlightWindow(spotlightVm);
             new WindowInteropHelper(_spotlight).EnsureHandle();
 
-            _hotkey = new HotkeyService(_spotlight, ToggleSpotlight, _service.GetHotkey());
+            // _tray is constructed above before _hotkey, so _tray.ShowBalloon is available here to
+            // surface a "could not register the hotkey" balloon when both default-chain combos fail.
+            _hotkey = new HotkeyService(_spotlight, ToggleSpotlight, _service.GetHotkey(),
+                notify: _tray.ShowBalloon);
+
+            // Hand the hotkey live-register + active-read delegates to the main window so the web UI
+            // hotkey-settings panel (via the bridge's setHotkey/getHotkey) can drive HotkeyService.
+            // Stored on MainWindow and forwarded to the bridge whenever WebView2 init completes.
+            _window.SetHotkeyDelegate(_hotkey.TrySetHotkey, () => _hotkey?.ActiveHotkey);
 
             // Show on launch (so `appshelf open` produces a window); close hides back to the tray.
             _window.Show();
@@ -126,14 +153,26 @@ public partial class App : Application
     private static string ErrorLogPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AppShelf", "error.log");
 
+    private const long ErrorLogMaxBytes = 1 * 1024 * 1024; // 1 MB
+
     /// <summary>Appends the full exception (with stack trace) to %APPDATA%\AppShelf\error.log so a
-    /// user can attach it to a bug report. Logging must never throw.</summary>
+    /// user can attach it to a bug report. Rotates to error.log.1 when the file exceeds 1 MB so a
+    /// crash loop can never fill the disk. Logging must never throw.</summary>
     private static void LogError(Exception? ex)
     {
         try
         {
             var path = ErrorLogPath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+            // Rotate if the log has grown past the size limit (overwrite any prior .1).
+            if (File.Exists(path) && new FileInfo(path).Length >= ErrorLogMaxBytes)
+            {
+                var rotated = path + ".1";
+                if (File.Exists(rotated)) File.Delete(rotated);
+                File.Move(path, rotated);
+            }
+
             File.AppendAllText(path,
                 $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {ex}{Environment.NewLine}{Environment.NewLine}");
         }
@@ -145,30 +184,42 @@ public partial class App : Application
 
     private void ShowWindow() => _window.ShowFromTray();
 
-    private void ShowPorts()
+    /// <summary>Tray quick-launch: resolve the app by id and launch it off the UI thread. Called
+    /// from <see cref="TrayIconService"/>'s click handler (already wrapped in <c>Task.Run</c>).
+    /// LoadApps re-reads from config so a stale tray snapshot can't launch a removed app.</summary>
+    private void LaunchFromTray(string id)
     {
-        var owner = _window.IsVisible ? _window : null;
-        var ports = new PortsWindow(_service, _dialogs) { Owner = owner };
-        ports.ShowDialog();
+        var entry = _service.LoadApps().FirstOrDefault(a => a.Id == id);
+        if (entry is null)
+            return;
+        _ = _service.LaunchAsync(entry);
     }
 
-    /// <summary>Open the Hotkey settings dialog. A successful change re-registers the global hotkey
-    /// live (no restart) via <see cref="HotkeyService.TrySetHotkey"/> and persists it to config; the
-    /// dialog restores the previous binding if a chosen combo is already in use by another app.</summary>
+    /// <summary>Tray quick-launch: resolve the app by id and stop it. Stop is synchronous; the
+    /// caller already runs this off the UI thread.</summary>
+    private void StopFromTray(string id)
+    {
+        var entry = _service.LoadApps().FirstOrDefault(a => a.Id == id);
+        if (entry is null)
+            return;
+        _service.Stop(entry);
+    }
+
+    /// <summary>Tray "Ports…": show the main window and switch the web UI to its Ports tab via the
+    /// C#→JS navigation push (the WPF PortsWindow dialog was removed in the WebView2 cutover).</summary>
+    private void ShowPorts()
+    {
+        _window.ShowFromTray();
+        _window.PostNavigation("ports");
+    }
+
+    /// <summary>Tray "Hotkey…": show the main window and open the web UI hotkey-settings panel via
+    /// the C#→JS navigation push. The panel persists + live-registers the new combo through the
+    /// bridge's setHotkey method (wired to <see cref="HotkeyService.TrySetHotkey"/>).</summary>
     private void ShowHotkeySettings()
     {
-        if (_hotkey is null)
-            return;
-
-        var owner = _window.IsVisible ? _window : null;
-        var dialog = new HotkeyWindow(
-            currentHotkey: _hotkey.ActiveHotkey,
-            tryRegister: _hotkey.TrySetHotkey,
-            persist: _service.SetHotkey)
-        {
-            Owner = owner,
-        };
-        dialog.ShowDialog();
+        _window.ShowFromTray();
+        _window.PostNavigation("hotkey-settings");
     }
 
     private void ToggleSpotlight()
@@ -186,7 +237,7 @@ public partial class App : Application
         var workArea = screen.WorkingArea;
 
         // SpotlightWindow uses SizeToContent, so force a layout pass to get a valid DesiredSize.
-        _spotlight.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        _spotlight.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
         _spotlight.Arrange(new Rect(_spotlight.DesiredSize));
 
         var source = PresentationSource.FromVisual(_spotlight)
@@ -213,11 +264,12 @@ public partial class App : Application
         _spotlight.Activate();
     }
 
+    /// <summary>Tray "Add app…": show the main window and open the web UI add-app dialog via the
+    /// C#→JS navigation push (the WPF add dialog was removed in the WebView2 cutover).</summary>
     private void AddFromTray()
     {
         _window.ShowFromTray();
-        if (_window.DataContext is MainViewModel vm && vm.AddCommand.CanExecute(null))
-            vm.AddCommand.Execute(null);
+        _window.PostNavigation("add-app");
     }
 
     private void QuitApp()

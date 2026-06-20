@@ -59,9 +59,20 @@ internal static class WebUiAssets
         }
 
         // Re-extract from scratch (covers an aborted previous run). Remove any partial folder first.
-        if (Directory.Exists(root))
-            Directory.Delete(root, recursive: true);
-        Directory.CreateDirectory(root);
+        // A locked-down %LOCALAPPDATA% (enterprise ACL, antivirus lock) throws UnauthorizedAccess —
+        // map it to a clear, actionable message instead of a raw "object reference" style failure.
+        try
+        {
+            if (Directory.Exists(root))
+                Directory.Delete(root, recursive: true);
+            Directory.CreateDirectory(root);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            throw new InvalidOperationException(
+                $"Access denied when extracting web UI assets to '{root}'. " +
+                "Check permissions on %LOCALAPPDATA%\\AppShelf\\webui\\.", ex);
+        }
 
         using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(ResourceName))
         {

@@ -13,6 +13,11 @@ using Forms = System.Windows.Forms;
 
 namespace AppShelf.App.Web;
 
+/// <summary>The minimal app projection the tray quick-launch submenu needs, surfaced from each
+/// bridge status poll. Public so <c>App.xaml.cs</c> can read it without exposing the bridge's
+/// private <c>AppView</c> record. <c>Status</c> is the same string the web UI receives.</summary>
+public sealed record TrayAppSnapshot(string Id, string Name, string Status, bool Favorite);
+
 /// <summary>
 /// JS &lt;-&gt; C# message bridge for the WebView2-hosted web UI (spike).
 ///
@@ -38,12 +43,31 @@ public sealed class AppShelfBridge
     private readonly GuiAppService _service;
     private readonly Dispatcher _dispatcher;
 
+    // Hotkey wiring (injected by MainWindow.SetHotkeyDelegate after HotkeyService exists):
+    // live-register a combo and read the currently-active combo. Null until wired.
+    private Func<string?, bool>? _tryRegisterHotkey;
+    private Func<string?>? _getActiveHotkey;
+
+    /// <summary>Fired after each successful <c>listApps</c> poll with the freshly-computed app list.
+    /// <c>App.xaml.cs</c> subscribes to keep the tray quick-launch snapshot current without an extra
+    /// probe. Injected (settable) rather than an event to match the existing delegate-injection
+    /// style. Runs on the bridge's background <c>Task.Run</c> thread.</summary>
+    public Action<IReadOnlyList<TrayAppSnapshot>>? OnAppsPolled { get; set; }
+
     public AppShelfBridge(WebView2 webView, GuiAppService service)
     {
         _webView = webView;
         _service = service;
         _dispatcher = webView.Dispatcher;
         _webView.WebMessageReceived += OnWebMessageReceived;
+    }
+
+    /// <summary>Supply the hotkey live-register + active-read delegates. Called by
+    /// <see cref="MainWindow.SetHotkeyDelegate"/> once <c>HotkeyService</c> is constructed.</summary>
+    public void SetHotkeyDelegates(Func<string?, bool> tryRegister, Func<string?> getActive)
+    {
+        _tryRegisterHotkey = tryRegister;
+        _getActiveHotkey = getActive;
     }
 
     /// <summary>What JS posts: a method name, optional args, and a correlation id.</summary>
@@ -55,7 +79,8 @@ public sealed class AppShelfBridge
     private sealed record AppView(
         string Id, string Name, string Url, string? Framework, bool Favorite,
         string? Group, string Role, int? Port, string Status, IReadOnlyList<string> Tags,
-        string? Dir);
+        string? Dir, IReadOnlyList<string>? LogTail,
+        string? Cmd, bool PortFixed);
 
     /// <summary>Port Doctor row: a rich <see cref="PortReport"/> projection. Unlike the CLI's
     /// <see cref="AppShelf.Core.Process.PortReportJson"/> (flat, drops ancestry) this keeps the full
@@ -116,7 +141,22 @@ public sealed class AppShelfBridge
         switch (method)
         {
             case "listApps":
-                return ListApps();
+            {
+                var apps = ListApps();
+                // Feed the tray quick-launch snapshot. A callback failure must never break the poll
+                // response, so swallow any exception from the subscriber.
+                try
+                {
+                    OnAppsPolled?.Invoke(apps
+                        .Select(a => new TrayAppSnapshot(a.Id, a.Name, a.Status, a.Favorite))
+                        .ToList());
+                }
+                catch
+                {
+                    /* never let a tray-snapshot subscriber failure bubble into the bridge response */
+                }
+                return apps;
+            }
 
             case "launch":
             {
@@ -243,6 +283,50 @@ public sealed class AppShelfBridge
             case "reservedPorts":
                 return _service.ReservedPorts(OptionalString(args, "excludeId")).ToArray();
 
+            // ── Log viewer ──────────────────────────────────────────────────
+            case "getLogTail":
+            {
+                // The captured stdout/stderr ring-buffer tail (up to 200 lines, oldest first).
+                // Empty array when the app is not managed/running.
+                var entry = ResolveApp(args);
+                return _service.LogTail(entry).ToArray();
+            }
+
+            // ── Spotlight hotkey settings ───────────────────────────────────
+            case "getHotkey":
+                return new
+                {
+                    combo = _service.GetHotkey(),
+                    activeHotkey = _getActiveHotkey?.Invoke(),
+                };
+
+            case "setHotkey":
+            {
+                var combo = OptionalString(args, "combo");
+                // Validate BEFORE persisting so a malformed or absurdly large combo never reaches
+                // config.json. An empty/null combo is the "clear → use default chain" path and is
+                // always allowed (no parse). A non-empty combo is length-capped and must parse.
+                if (!string.IsNullOrEmpty(combo))
+                {
+                    if (combo.Length > 100)
+                        throw new InvalidOperationException("Hotkey combo too long (max 100 characters).");
+                    if (AppShelf.App.Spotlight.HotkeyCombo.Parse(combo) is null)
+                        throw new InvalidOperationException(
+                            $"Invalid hotkey combo: cannot parse '{combo}'. Use a format like 'Ctrl+Shift+J'.");
+                }
+
+                // Persist first (atomic config write), then live-register. Win32 RegisterHotKey
+                // targets the overlay HWND, so marshal the register call onto the UI dispatcher
+                // (same pattern as PickFolder) — this dispatch body runs on a Task.Run thread.
+                _service.SetHotkey(combo);
+                var registered = _dispatcher.Invoke(() => _tryRegisterHotkey?.Invoke(combo) ?? true);
+                return new
+                {
+                    ok = registered,
+                    activeHotkey = _getActiveHotkey?.Invoke(),
+                };
+            }
+
             default:
                 throw new InvalidOperationException($"Unknown bridge method '{method}'.");
         }
@@ -257,10 +341,21 @@ public sealed class AppShelfBridge
     private IReadOnlyList<AppView> ListApps()
     {
         var entries = _service.LoadApps();
-        // Project each app with its status concurrently (TCP probe per app).
-        var tasks = entries.Select(a => Task.Run(() => new AppView(
-            a.Id, a.Name, a.Url, a.Framework, a.Favorite,
-            a.Group, a.Role, a.Port, StatusFor(a), a.Tags, a.Dir))).ToArray();
+        // Project each app with its status concurrently (TCP probe per app). StatusFor is called
+        // once per app and reused for the LogTail decision (it does a blocking probe — don't repeat
+        // it). Only a crashed (StoppedUnexpectedly) app carries its log tail; every other status
+        // sends LogTail=null so the poll payload stays lean.
+        var tasks = entries.Select(a => Task.Run(() =>
+        {
+            var status = StatusFor(a);
+            var logTail = status == StoppedUnexpectedly
+                ? (IReadOnlyList<string>)_service.LogTail(a)
+                : null;
+            return new AppView(
+                a.Id, a.Name, a.Url, a.Framework, a.Favorite,
+                a.Group, a.Role, a.Port, status, a.Tags, a.Dir, logTail,
+                a.Cmd, a.PortFixed);
+        })).ToArray();
         return Task.WhenAll(tasks).GetAwaiter().GetResult();
     }
 
@@ -609,7 +704,8 @@ public sealed class AppShelfBridge
     /// list returns) so the JS side can splice the created/updated row in if it wants.</summary>
     private AppView ProjectApp(AppEntry a) =>
         new(a.Id, a.Name, a.Url, a.Framework, a.Favorite,
-            a.Group, a.Role, a.Port, StatusFor(a), a.Tags, a.Dir);
+            a.Group, a.Role, a.Port, StatusFor(a), a.Tags, a.Dir, LogTail: null,
+            Cmd: a.Cmd, PortFixed: a.PortFixed);
 
     /// <summary>Normalize a role string to one of the allowed <see cref="AppRoles"/> values,
     /// defaulting to "other".</summary>
@@ -677,7 +773,17 @@ public sealed class AppShelfBridge
     private string StatusFor(AppEntry entry)
     {
         if (_service.DidManagedAppExit(entry))
-            return StoppedUnexpectedly;
+        {
+            // The managed process exited unexpectedly (a crash). But if the port is live AGAIN — an
+            // external relaunch, a reclaim, or a manual restart healed it — the crash is no longer
+            // true. Clear the stale managed entry so status reports correctly from here on, then
+            // fall through to the normal StatusOf path. Use the same 150 ms fast-probe budget as the
+            // poll so a healed-crash app costs at most one extra probe (~150 ms) per ~2 s cycle.
+            if (ProcessManager.IsPortListening(entry.Url, FastProbeTimeoutMs))
+                _service.ClearManagedExit(entry);
+            else
+                return StoppedUnexpectedly;
+        }
 
         var status = _service.StatusOf(entry, FastProbeTimeoutMs);
         if (status == LaunchStatus.PortInUse)

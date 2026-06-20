@@ -66,6 +66,18 @@ public sealed class GuiAppService : IDisposable
         for (var i = 0; i < 20 && ProcessManager.IsPortInUse(port); i++)
             await Task.Delay(150);
 
+        // If the port is STILL held after the poll, relaunching would just bind-fail and leave the
+        // user with a confusing Error state. Report the real cause instead of attempting a doomed
+        // launch. (ReclaimResult.Launch is nullable in the bridge response; an Error result here is
+        // fully compatible.)
+        if (ProcessManager.IsPortInUse(port))
+        {
+            return new ReclaimResult(kill,
+                new LaunchResult(LaunchStatus.Error, null, Array.Empty<string>(),
+                    $"Port {port} is still in use after the kill. Another process may have reclaimed it. " +
+                    "Stop that process manually and try again."));
+        }
+
         // The kill already succeeded — never let a relaunch exception bubble out as an unhandled
         // async-void crash in the VM. Map any failure to a readable Error result the VM messages on.
         LaunchResult launch;
@@ -109,6 +121,12 @@ public sealed class GuiAppService : IDisposable
     public bool DidManagedAppExit(AppEntry entry) =>
         _processes.IsManagedAndExited(entry.Id);
 
+    /// <summary>Clear a stale crashed managed entry once a port-alive probe shows the crash was
+    /// externally healed (the server was relaunched outside AppShelf). Thin door to
+    /// <see cref="ProcessManager.ClearManagedExit"/>; a no-op when the id is not tracked or its
+    /// process is still alive.</summary>
+    public void ClearManagedExit(AppEntry entry) => _processes.ClearManagedExit(entry.Id);
+
     public AppEntry Add(AppEntry entry) => _store.AddApp(entry);
     public void Update(AppEntry entry) => _store.UpdateApp(entry);
 
@@ -125,23 +143,28 @@ public sealed class GuiAppService : IDisposable
         _store.Save(config);
     }
 
-    /// <summary>Apply a label-only regroup: for each change, load the app, set its
-    /// <see cref="AppEntry.Group"/>/<see cref="AppEntry.Role"/>/<see cref="AppEntry.Order"/> and
-    /// persist (atomic per app). Never starts or stops a process.</summary>
+    /// <summary>Apply a label-only regroup. Loads the config ONCE, applies every planned change
+    /// in-memory, then saves ONCE (atomic temp-then-replace). Batching the writes means a
+    /// contended config lock can no longer interleave mid-loop and leave a half-re-grouped state
+    /// (the old per-app <c>UpdateApp</c> loop did N independent Load→mutate→Save cycles). Never
+    /// starts or stops a process.</summary>
     public void ApplyRegroup(RegroupPlan plan)
     {
         if (plan.Kind == DropKind.NoOp || plan.Changes.Count == 0)
             return;
 
-        foreach (var change in plan.Changes)
+        var changeMap = plan.Changes.ToDictionary(c => c.AppId, StringComparer.Ordinal);
+
+        var config = _store.Load();
+        foreach (var app in config.Apps)
         {
-            var app = LoadApps().FirstOrDefault(a => a.Id == change.AppId);
-            if (app is null) continue; // app vanished underneath us — skip silently
+            if (!changeMap.TryGetValue(app.Id, out var change))
+                continue;
             app.Group = change.Group;
             app.Role = change.Role;
             app.Order = change.Order;
-            _store.UpdateApp(app);
         }
+        _store.Save(config);
     }
     /// <summary>Rename a group: re-label every member whose <see cref="AppEntry.Group"/> matches
     /// <paramref name="oldName"/> (case-insensitive) to the trimmed <paramref name="newName"/> and
@@ -226,7 +249,11 @@ public sealed class GuiAppService : IDisposable
 
         var psi = new System.Diagnostics.ProcessStartInfo
         {
-            FileName = "powershell",
+            // Use the canonical Windows PowerShell path rather than PATH-resolved "powershell":
+            // for an ELEVATED operation, a PATH shadow (a non-standard PATH or a malicious shim)
+            // could run the wrong binary as admin. SystemDirectory is always %windir%\System32.
+            FileName = System.IO.Path.Combine(
+                Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"),
             UseShellExecute = true,
             Verb = "runas",
             WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
