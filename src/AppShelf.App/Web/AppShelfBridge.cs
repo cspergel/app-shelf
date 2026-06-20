@@ -1,8 +1,10 @@
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Windows.Threading;
 using AppShelf.App.Services;
 using AppShelf.Core.Models;
+using AppShelf.Core.Process;
 using Microsoft.Web.WebView2.Wpf;
 
 namespace AppShelf.App.Web;
@@ -47,6 +49,19 @@ public sealed class AppShelfBridge
     private sealed record AppView(
         string Id, string Name, string Url, string? Framework, bool Favorite,
         string? Group, string Role, int? Port, string Status, IReadOnlyList<string> Tags);
+
+    /// <summary>Port Doctor row: a rich <see cref="PortReport"/> projection. Unlike the CLI's
+    /// <see cref="AppShelf.Core.Process.PortReportJson"/> (flat, drops ancestry) this keeps the full
+    /// ancestry chain the GUI's expand-row needs.</summary>
+    private sealed record PortRowView(
+        int Port, string Family, string Tier, int Pid, string ProcessName, bool IsService,
+        string? ServiceName, bool ParentAlive, string? OwnerAppId, string? OwnerAppName,
+        string? ExePath, string? CommandLine, string? ExeDir, DateTimeOffset? StartedAt,
+        IReadOnlyList<AncestorView> Ancestry);
+
+    /// <summary>One node in the process parent chain, projected for the expand-row.</summary>
+    private sealed record AncestorView(
+        int Pid, string ProcessName, bool Alive, string? CommandLine, string? ExeDir);
 
     /// <summary>The web UI's "crashed" state. The Core <see cref="LaunchStatus"/> enum has no
     /// such member (crash detection is GUI-only), so the bridge emits this string directly when a
@@ -110,6 +125,41 @@ public sealed class AppShelfBridge
                 return null;
             }
 
+            // ── Port Doctor ─────────────────────────────────────────────────
+            case "scanPorts":
+                return ScanPorts();
+
+            case "killPort":
+            {
+                var port = RequireInt(args, "port");
+                var outcome = _service.KillPort(port);
+                return new { success = outcome.Success, reason = outcome.Reason, accessDenied = outcome.AccessDenied };
+            }
+
+            case "reclaimPort":
+            {
+                var ownerAppId = RequireString(args, "ownerAppId");
+                var port = RequireInt(args, "port");
+                var entry = _service.LoadApps().FirstOrDefault(a => a.Id == ownerAppId)
+                    ?? throw new InvalidOperationException($"No app with id '{ownerAppId}'.");
+                var result = await _service.ReclaimAsync(entry, port);
+                return new
+                {
+                    kill = new { success = result.Kill.Success, reason = result.Kill.Reason, accessDenied = result.Kill.AccessDenied },
+                    launch = result.Launch is { } l
+                        ? new { status = l.Status.ToString(), reason = l.Reason }
+                        : null,
+                };
+            }
+
+            case "stopService":
+            {
+                var serviceName = RequireString(args, "serviceName");
+                var port = RequireInt(args, "port");
+                var outcome = await _service.StopServiceElevatedAsync(serviceName, port);
+                return new { started = outcome.Started, cancelled = outcome.Cancelled, portFreed = outcome.PortFreed, reason = outcome.Reason };
+            }
+
             default:
                 throw new InvalidOperationException($"Unknown bridge method '{method}'.");
         }
@@ -120,6 +170,30 @@ public sealed class AppShelfBridge
             .Select(a => new AppView(
                 a.Id, a.Name, a.Url, a.Framework, a.Favorite,
                 a.Group, a.Role, a.Port, StatusFor(a), a.Tags))
+            .ToList();
+
+    /// <summary>Scan live listeners and project each <see cref="PortReport"/> to the rich row the
+    /// Port Doctor view renders (one row per report, ancestry included).</summary>
+    private IReadOnlyList<PortRowView> ScanPorts() =>
+        _service.ScanPorts()
+            .Select(r => new PortRowView(
+                Port: r.Port,
+                Family: r.Family == AddressFamily.InterNetworkV6 ? "ipv6" : "ipv4",
+                Tier: r.Tier.ToString(),
+                Pid: r.Evidence.Pid,
+                ProcessName: r.Evidence.ProcessName,
+                IsService: r.Evidence.IsService,
+                ServiceName: r.Evidence.ServiceName,
+                ParentAlive: r.Evidence.ParentAlive,
+                OwnerAppId: r.OwnerAppId,
+                OwnerAppName: r.OwnerAppName,
+                ExePath: r.Evidence.ExePath,
+                CommandLine: r.Evidence.CommandLine,
+                ExeDir: r.Evidence.ExeDir,
+                StartedAt: r.Evidence.StartedAt,
+                Ancestry: (r.Evidence.Ancestry ?? Array.Empty<AncestorInfo>())
+                    .Select(a => new AncestorView(a.Pid, a.ProcessName, a.Alive, a.CommandLine, a.ExeDir))
+                    .ToList()))
             .ToList();
 
     /// <summary>Live status name for the grid. A managed app whose process exited unexpectedly is
@@ -158,6 +232,32 @@ public sealed class AppShelfBridge
         var entry = _service.LoadApps().FirstOrDefault(a => a.Id == id)
             ?? throw new InvalidOperationException($"No app with id '{id}'.");
         return entry;
+    }
+
+    /// <summary>Read a required int arg (tolerates a JSON number or a numeric string).</summary>
+    private static int RequireInt(JsonElement args, string name)
+    {
+        if (!args.TryGetProperty(name, out var prop))
+            throw new ArgumentException($"Missing '{name}' argument.");
+
+        if (prop.ValueKind == JsonValueKind.Number && prop.TryGetInt32(out var n))
+            return n;
+        if (prop.ValueKind == JsonValueKind.String && int.TryParse(prop.GetString(), out var s))
+            return s;
+
+        throw new ArgumentException($"Argument '{name}' must be an integer.");
+    }
+
+    /// <summary>Read a required non-empty string arg.</summary>
+    private static string RequireString(JsonElement args, string name)
+    {
+        if (!args.TryGetProperty(name, out var prop) || prop.ValueKind != JsonValueKind.String)
+            throw new ArgumentException($"Missing '{name}' argument.");
+
+        var value = prop.GetString();
+        if (string.IsNullOrEmpty(value))
+            throw new ArgumentException($"Argument '{name}' must be a non-empty string.");
+        return value;
     }
 
     private void PostResponse(string requestId, bool ok, object? result = null, string? error = null)

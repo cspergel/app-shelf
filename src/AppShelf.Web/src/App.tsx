@@ -1,10 +1,13 @@
 import { useMemo, useState } from "react";
-import { Search, Plus, RefreshCw, Layers } from "lucide-react";
+import { Search, Plus, RefreshCw, Layers, LayoutGrid, Activity } from "lucide-react";
 import { useBridge } from "@/lib/use-bridge";
 import { AppCard } from "@/components/app-card";
 import { GroupCard } from "@/components/group-card";
+import { PortDoctor } from "@/components/port-doctor";
 import { cn } from "@/lib/utils";
 import type { AppView } from "@/lib/types";
+
+type Tab = "apps" | "ports";
 
 // ── Group aggregation ──────────────────────────────────────────────────────
 interface GroupedView {
@@ -56,6 +59,7 @@ function buildCardEntries(apps: AppView[]): CardEntry[] {
 export default function App() {
   const { apps, loading, error, connected, refresh, launch, stop } = useBridge();
   const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<Tab>("apps");
 
   // Stats for the header badge
   const runningCount = apps.filter((a) => a.status === "Running").length;
@@ -99,8 +103,8 @@ export default function App() {
           </span>
         )}
 
-        {/* Running count pill */}
-        {totalCount > 0 && (
+        {/* Running count pill — apps tab only */}
+        {tab === "apps" && totalCount > 0 && (
           <div className="flex items-center gap-1.5 shrink-0">
             <span className="h-px w-3 bg-hairline" />
             <span
@@ -118,78 +122,126 @@ export default function App() {
           </div>
         )}
 
-        {/* Search — center, flex-1, capped width */}
-        <div className="relative flex-1 max-w-sm ml-3">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-text-faint" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search apps or #tags…"
-            className={cn(
-              "h-7 w-full rounded-input border border-hairline bg-surface-elevated",
-              "pl-7 pr-3 text-xs text-text-primary placeholder:text-text-faint",
-              "outline-none transition-all duration-[120ms]",
-              "focus:border-accent/40 focus:shadow-accent-glow/30 focus:bg-surface-elevated",
-            )}
-          />
-          {query && (
-            <button
-              onClick={() => setQuery("")}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-text-faint hover:text-text-secondary text-xs"
-            >
-              ✕
-            </button>
-          )}
+        {/* ── Tab switch: Apps | Ports ─────────────────────────────────────── */}
+        <div className="ml-2 flex shrink-0 items-center gap-0.5 rounded-input bg-surface-elevated/60 p-0.5">
+          <TabButton active={tab === "apps"} onClick={() => setTab("apps")} icon={<LayoutGrid className="h-3 w-3" />}>
+            Apps
+          </TabButton>
+          <TabButton active={tab === "ports"} onClick={() => setTab("ports")} icon={<Activity className="h-3 w-3" />}>
+            Ports
+          </TabButton>
         </div>
+
+        {/* Search — apps tab only */}
+        {tab === "apps" && (
+          <div className="relative flex-1 max-w-sm ml-3">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2 text-text-faint" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search apps or #tags…"
+              className={cn(
+                "h-7 w-full rounded-input border border-hairline bg-surface-elevated",
+                "pl-7 pr-3 text-xs text-text-primary placeholder:text-text-faint",
+                "outline-none transition-all duration-[120ms]",
+                "focus:border-accent/40 focus:shadow-accent-glow/30 focus:bg-surface-elevated",
+              )}
+            />
+            {query && (
+              <button
+                onClick={() => setQuery("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-text-faint hover:text-text-secondary text-xs"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Spacer */}
         <div className="flex-1" />
 
-        {/* Refresh */}
-        <button
-          onClick={() => void refresh()}
-          title="Refresh"
-          className="h-7 w-7 flex items-center justify-center rounded-input text-text-faint hover:text-text-secondary hover:bg-surface-card-hover transition-all duration-[120ms]"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-        </button>
+        {/* Refresh + Add — apps tab only (Ports has its own re-scan) */}
+        {tab === "apps" && (
+          <>
+            <button
+              onClick={() => void refresh()}
+              title="Refresh"
+              className="h-7 w-7 flex items-center justify-center rounded-input text-text-faint hover:text-text-secondary hover:bg-surface-card-hover transition-all duration-[120ms]"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+            </button>
 
-        {/* Add app — primary affordance in header */}
-        <button
-          title="Add app"
-          className={cn(
-            "inline-flex items-center gap-1.5 h-7 px-3 rounded-input",
-            "text-xs font-semibold text-white tracking-[-0.01em]",
-            "bg-accent hover:bg-accent-hover shadow-[0_1px_2px_rgba(0,0,0,0.4)]",
-            "transition-all duration-[120ms] active:scale-[0.97]",
-          )}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add
-        </button>
+            <button
+              title="Add app"
+              className={cn(
+                "inline-flex items-center gap-1.5 h-7 px-3 rounded-input",
+                "text-xs font-semibold text-white tracking-[-0.01em]",
+                "bg-accent hover:bg-accent-hover shadow-[0_1px_2px_rgba(0,0,0,0.4)]",
+                "transition-all duration-[120ms] active:scale-[0.97]",
+              )}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add
+            </button>
+          </>
+        )}
       </header>
 
       {/* ── BODY ──────────────────────────────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto px-5 py-5">
-        {loading ? (
-          <LoadingSkeleton />
-        ) : error ? (
-          <EmptyState icon="⚠️" title="Couldn't load apps" hint={error} danger />
-        ) : entries.length === 0 ? (
-          <EmptyState
-            icon={query ? "🔍" : "📦"}
-            title={query ? "No matches" : "No apps registered yet"}
-            hint={
-              query
-                ? `No apps matching "${query}". Try a different search.`
-                : "Add a project with the + button or via the appshelf CLI."
-            }
-          />
-        ) : (
-          <CardGrid entries={entries} onLaunch={launch} onStop={stop} />
-        )}
-      </main>
+      {tab === "ports" ? (
+        <PortDoctor />
+      ) : (
+        <main className="flex-1 overflow-y-auto px-5 py-5">
+          {loading ? (
+            <LoadingSkeleton />
+          ) : error ? (
+            <EmptyState icon="⚠️" title="Couldn't load apps" hint={error} danger />
+          ) : entries.length === 0 ? (
+            <EmptyState
+              icon={query ? "🔍" : "📦"}
+              title={query ? "No matches" : "No apps registered yet"}
+              hint={
+                query
+                  ? `No apps matching "${query}". Try a different search.`
+                  : "Add a project with the + button or via the appshelf CLI."
+              }
+            />
+          ) : (
+            <CardGrid entries={entries} onLaunch={launch} onStop={stop} />
+          )}
+        </main>
+      )}
     </div>
+  );
+}
+
+// ── Tab button (segmented control) ───────────────────────────────────────────
+function TabButton({
+  active,
+  onClick,
+  icon,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-[5px] px-2.5 h-6 text-xs font-medium",
+        "transition-all duration-[120ms]",
+        active
+          ? "bg-surface-card text-text-primary shadow-[0_1px_2px_rgba(0,0,0,0.3)]"
+          : "text-text-faint hover:text-text-secondary",
+      )}
+    >
+      {icon}
+      {children}
+    </button>
   );
 }
 
