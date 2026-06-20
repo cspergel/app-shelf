@@ -1,0 +1,99 @@
+/* Inter + JetBrains Mono */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SINGLE THEME — Ostara-inspired deep slate dark
+   No runtime switching. Colors are literal hex baked by Tailwind at build
+   time; this file only carries structural helpers that can't live in config.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@layer base {
+  /* ── Forced-colors opt-out ──────────────────────────────────────────────
+     WebView2 / Windows high-contrast mode forces system palette values.
+     Opt the whole subtree out so author colors are always used. */
+  html {
+    forced-color-adjust: none;
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background-color: #161C24;   /* Ostara background — cool blue-slate */
+    color: #F9FAFB;              /* Ostara text.primary */
+    font-family: Inter, "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-user-select: none;
+    user-select: none;
+    overflow: hidden;
+  }
+
+  /* Thin scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.09);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.16);
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  /* Allow text selection inside inputs */
+  input, textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
+
+@layer utilities {
+  /* Staggered card entrance delays */
+  .animation-delay-50  { animation-delay: 50ms; }
+  .animation-delay-100 { animation-delay: 100ms; }
+  .animation-delay-150 { animation-delay: 150ms; }
+  .animation-delay-200 { animation-delay: 200ms; }
+
+  /* Hairline top/bottom dividers — literal rgba, no CSS var needed */
+  .border-top-hairline {
+    border-top: 1px solid rgba(255,255,255,0.07);
+  }
+  .border-bottom-hairline {
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+  }
+
+  /* Monospace meta — port / url */
+  .meta-mono {
+    @apply font-mono text-xs text-text-faint tracking-[0.01em];
+  }
+
+  /* Ghost button — borderless quiet text action */
+  .btn-ghost-action {
+    @apply text-text-faint text-sm font-medium px-2.5 py-1 rounded-[5px]
+           transition-colors duration-[120ms]
+           hover:text-text-secondary hover:bg-surface-card-hover
+           active:scale-[0.97];
+  }
+
+  /* Danger ghost — stop / kill port */
+  .btn-danger-ghost {
+    @apply text-status-error/70 text-sm font-medium px-2.5 py-1 rounded-[5px]
+           transition-colors duration-[120ms]
+           hover:text-status-error hover:bg-status-error/10
+           active:scale-[0.97];
+  }
+}

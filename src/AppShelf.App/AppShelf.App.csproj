@@ -4,6 +4,11 @@
     <ProjectReference Include="..\AppShelf.Core\AppShelf.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Web UI host (spike): React/Tailwind/shadcn served into a WebView2 control. -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3124.44" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
@@ -16,11 +21,88 @@
     <AssemblyName>AppShelf</AssemblyName>
     <RootNamespace>AppShelf.App</RootNamespace>
     <ApplicationIcon>Resources\appshelf.ico</ApplicationIcon>
+    <!-- Static WebView2 loader keeps single-file publish working later. -->
+    <WebView2LoaderPreference>Static</WebView2LoaderPreference>
   </PropertyGroup>
 
   <ItemGroup>
     <!-- Embedded so the tray (and any window) can load it via a pack URI at runtime. -->
     <Resource Include="Resources\appshelf.ico" />
   </ItemGroup>
+
+  <!-- ============================================================================
+       Web UI bundling (RELEASE only).
+
+       The React/Vite app in ../AppShelf.Web is built and embedded into this assembly
+       as `webui.zip`. At runtime (RELEASE) it is extracted to %LOCALAPPDATA% and served
+       to WebView2 via a virtual host, so the published single-file exe needs no Vite
+       dev server. DEBUG keeps using the live Vite dev server (hot reload), so this whole
+       pipeline is skipped in Debug builds.
+       ============================================================================ -->
+  <PropertyGroup>
+    <WebUiProjectDir>$(MSBuildProjectDirectory)\..\AppShelf.Web</WebUiProjectDir>
+    <WebUiDistDir>$(WebUiProjectDir)\dist</WebUiDistDir>
+    <!-- Absolute path anchored under obj\. $(IntermediateOutputPath) is not yet expanded to
+         obj\Release\ when top-level properties are evaluated, so referencing it here would put
+         the zip in the project root. A fixed obj\ path is unambiguous and stays out of both the
+         project root and the build/publish output. -->
+    <WebUiZipPath>$(MSBuildProjectDirectory)\obj\webui.zip</WebUiZipPath>
+  </PropertyGroup>
+
+  <!-- Build the web UI (npm install if needed, then `npm run build`). Release only.
+       Runs before BuildWebUiZip. Inputs/outputs let MSBuild skip the npm build when the
+       sources haven't changed since the last dist build. -->
+  <Target Name="BuildWebUi"
+          Condition="'$(Configuration)' == 'Release'"
+          Inputs="@(WebUiSource)"
+          Outputs="$(WebUiDistDir)\index.html">
+    <ItemGroup>
+      <!-- Source fingerprint: changes here invalidate the cached dist build.
+           node_modules and dist are excluded so they don't trigger or self-trigger. -->
+      <WebUiSource Include="$(WebUiProjectDir)\src\**\*" />
+      <WebUiSource Include="$(WebUiProjectDir)\*.json" />
+      <WebUiSource Include="$(WebUiProjectDir)\*.ts" />
+      <WebUiSource Include="$(WebUiProjectDir)\*.js" />
+      <WebUiSource Include="$(WebUiProjectDir)\*.html" />
+      <WebUiSource Include="$(WebUiProjectDir)\*.cjs" />
+    </ItemGroup>
+
+    <Message Importance="high" Text="AppShelf: building web UI in $(WebUiProjectDir)" />
+
+    <!-- npm install only when node_modules is missing (keeps incremental builds fast). -->
+    <Exec Condition="!Exists('$(WebUiProjectDir)\node_modules')"
+          Command="npm ci"
+          WorkingDirectory="$(WebUiProjectDir)" />
+
+    <Exec Command="npm run build" WorkingDirectory="$(WebUiProjectDir)" />
+  </Target>
+
+  <!-- Zip the freshly built dist into the intermediate output. Release only. -->
+  <Target Name="BuildWebUiZip"
+          Condition="'$(Configuration)' == 'Release'"
+          DependsOnTargets="BuildWebUi"
+          BeforeTargets="PrepareForBuild;BeforeCompile;CoreCompile"
+          Inputs="$(WebUiDistDir)\index.html"
+          Outputs="$(WebUiZipPath)">
+    <Error Condition="!Exists('$(WebUiDistDir)\index.html')"
+           Text="Web UI dist not found at $(WebUiDistDir). The `npm run build` step did not produce output." />
+    <MakeDir Directories="$(MSBuildProjectDirectory)\obj" />
+    <Delete Files="$(WebUiZipPath)" Condition="Exists('$(WebUiZipPath)')" />
+    <ZipDirectory SourceDirectory="$(WebUiDistDir)" DestinationFile="$(WebUiZipPath)" />
+    <Message Importance="high" Text="AppShelf: embedded web UI -> $(WebUiZipPath)" />
+  </Target>
+
+  <!-- Register the zip as an embedded resource (Release only). Runs before compilation so the
+       resource is present in the assembly. The logical name must match WebUiAssets.ResourceName. -->
+  <Target Name="AddWebUiResource"
+          Condition="'$(Configuration)' == 'Release'"
+          DependsOnTargets="BuildWebUiZip"
+          BeforeTargets="PrepareForBuild;BeforeCompile;CoreCompile">
+    <ItemGroup>
+      <EmbeddedResource Include="$(WebUiZipPath)">
+        <LogicalName>AppShelf.App.webui.zip</LogicalName>
+      </EmbeddedResource>
+    </ItemGroup>
+  </Target>
 
 </Project>

@@ -84,10 +84,16 @@ public sealed class GuiAppService : IDisposable
     /// are managing it (not up yet) else Stopped. If it is listening, Running only when the listener
     /// is one of our managed processes (or the app is URL-only / has no port to check); a registered
     /// port held by a foreign process is reported as PortInUse so the pre-flight conflict gate becomes
-    /// reachable from the card.</summary>
-    public LaunchStatus StatusOf(AppEntry entry)
+    /// reachable from the card.
+    ///
+    /// <paramref name="probeTimeoutMs"/> controls the per-address TCP connect timeout forwarded to
+    /// <see cref="ProcessManager.IsPortListening"/>. The default (500 ms) is appropriate for WPF
+    /// card-grid refreshes and launch pre-flight. Pass a shorter value (e.g. 150 ms) for the web
+    /// bridge's high-frequency status poll — localhost responds in &lt;10 ms when live, and the
+    /// concurrent dual-family probe collapses to ≤ probeTimeoutMs when stopped.</summary>
+    public LaunchStatus StatusOf(AppEntry entry, int probeTimeoutMs = 500)
     {
-        bool listening = ProcessManager.IsPortListening(entry.Url);
+        bool listening = ProcessManager.IsPortListening(entry.Url, probeTimeoutMs);
         if (!listening)
             return _processes.IsManaged(entry.Id) ? LaunchStatus.Starting : LaunchStatus.Stopped;
 

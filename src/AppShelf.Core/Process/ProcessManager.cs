@@ -296,13 +296,32 @@ public sealed class ProcessManager : IDisposable
         // 'localhost' resolves to BOTH ::1 (IPv6) and 127.0.0.1 (IPv4), and Windows returns
         // ::1 first. A dev server may bind only one family (Vite -> ::1, uvicorn --host
         // 127.0.0.1/0.0.0.0 -> IPv4), so a single hostname connect can probe the wrong family
-        // and report a live server as stopped. Try every resolved address; any answer = up.
-        foreach (var address in ResolveAddresses(host))
+        // and report a live server as stopped.
+        //
+        // Probe all resolved addresses CONCURRENTLY so total wall-clock time is bounded by ONE
+        // timeout budget (not N×timeout when every family fails to connect). A stopped app on a
+        // dual-stack localhost was previously ~1 s (2 × 500 ms sequential). With concurrent
+        // probes it collapses to ≤ timeoutMs regardless of how many addresses resolve.
+        var addresses = ResolveAddresses(host).ToArray();
+        if (addresses.Length == 0)
+            return false;
+        if (addresses.Length == 1)
+            return TryConnect(addresses[0], port, timeoutMs);
+
+        // Fire all probes in parallel; return true the moment any succeeds.
+        using var cts = new System.Threading.CancellationTokenSource();
+        var found = false;
+        var tasks = addresses.Select(addr => Task.Run(() =>
         {
-            if (TryConnect(address, port, timeoutMs))
-                return true;
-        }
-        return false;
+            if (TryConnect(addr, port, timeoutMs))
+            {
+                // Signal success and let the other probes time out naturally (they hold their
+                // own WaitOne — there is no cheap cross-thread cancel for BeginConnect).
+                System.Threading.Volatile.Write(ref found, true);
+            }
+        })).ToArray();
+        Task.WhenAll(tasks).GetAwaiter().GetResult();
+        return System.Threading.Volatile.Read(ref found);
     }
 
     private static IEnumerable<IPAddress> ResolveAddresses(string host)
