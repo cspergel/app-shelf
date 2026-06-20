@@ -1,5 +1,8 @@
 import { useState } from "react";
-import { ChevronRight, Play, Square, ExternalLink, Star } from "lucide-react";
+import { ChevronRight, Play, Square, ExternalLink, Star, GripVertical } from "lucide-react";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import type { DragKind } from "@/lib/regroup";
 import { StatusDot, statusMeta } from "./status-dot";
 import { CardMenu } from "./card-menu";
 import { cn } from "@/lib/utils";
@@ -14,6 +17,9 @@ interface GroupCardProps {
   onEdit?: (app: AppView) => void;
   onRemove?: (app: AppView) => void;
   onFavorite?: (id: string, favorite: boolean) => void;
+  /** Drag state from the grid (optional — group card also renders outside DnD in tests). */
+  activeMemberId?: string | null;
+  overMemberId?: string | null;
   style?: React.CSSProperties;
 }
 
@@ -62,7 +68,7 @@ function RoleChip({ role }: { role: string }) {
   );
 }
 
-export function GroupCard({ name, members, onLaunch, onStop, onToast, onEdit, onRemove, onFavorite, style }: GroupCardProps) {
+export function GroupCard({ name, members, onLaunch, onStop, onToast, onEdit, onRemove, onFavorite, activeMemberId, overMemberId, style }: GroupCardProps) {
   const [expanded, setExpanded] = useState(true);
   const aggStatus = aggregateStatus(members);
   const aggMeta = statusMeta(aggStatus);
@@ -172,88 +178,147 @@ export function GroupCard({ name, members, onLaunch, onStop, onToast, onEdit, on
 
         {/* ── EXPANDED MEMBER ROWS ─────────────────────────────────────── */}
         {expanded && (
-          <div className="mt-3 border-top-hairline pt-2.5 flex flex-col gap-0.5 animate-slide-down">
-            {members.map((member) => {
-              const mMeta = statusMeta(member.status);
-              const mStopped = member.status === "Stopped";
-              const mRunning = member.status === "Running";
-              return (
-                <div
+          <SortableContext
+            items={members.map((m) => `member:${m.id}`)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="mt-3 border-top-hairline pt-2.5 flex flex-col gap-0.5 animate-slide-down">
+              {members.map((member) => (
+                <MemberRow
                   key={member.id}
-                  className="relative flex items-center gap-2 px-1 py-1.5 rounded-[5px] hover:bg-surface-card-hover transition-colors duration-[120ms] group/member"
-                >
-                  {/* Per-member status rail (2px, shorter) */}
-                  <span
-                    className={cn(
-                      "w-0.5 h-6 rounded-full shrink-0",
-                      mMeta.railClass,
-                      mStopped && "opacity-25",
-                    )}
-                  />
-
-                  {/* Favorite star — always present (subtle when off), gold when active. */}
-                  <button
-                    onClick={() => onFavorite?.(member.id, !member.favorite)}
-                    className={cn(
-                      "shrink-0 transition-all duration-[120ms] hover:scale-110 active:scale-95",
-                      member.favorite
-                        ? "text-[#E5C04B]"
-                        : "text-text-faint/50 hover:text-[#E5C04B]/80",
-                    )}
-                    title={member.favorite ? "Remove favorite" : "Add to favorites"}
-                    aria-pressed={member.favorite}
-                  >
-                    <Star
-                      className="h-3 w-3"
-                      fill={member.favorite ? "currentColor" : "none"}
-                    />
-                  </button>
-
-                  {/* Member identity: name + role chip, flex-1 with proper truncation */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-xs font-medium text-text-secondary truncate">
-                        {member.name}
-                      </span>
-                      {member.role && <RoleChip role={member.role} />}
-                    </div>
-                    {member.port && (
-                      <span className="meta-mono text-2xs">{`:${member.port}`}</span>
-                    )}
-                  </div>
-
-                  {/* Status dot + quick action (hover-only, replaced by dot at rest) */}
-                  <div className="relative shrink-0 flex items-center justify-center w-4 h-4">
-                    {/* Dot: visible at rest, hidden on hover */}
-                    <StatusDot
-                      status={member.status}
-                      className="absolute group-hover/member:opacity-0 transition-opacity duration-[120ms]"
-                    />
-                    {/* Quick action button: hidden at rest, appears on hover */}
-                    <button
-                      className="absolute opacity-0 group-hover/member:opacity-100 transition-opacity duration-[120ms] btn-ghost-action text-2xs py-0 px-0 w-full h-full flex items-center justify-center"
-                      onClick={() => {
-                        if (mRunning) window.open(member.url, "_blank");
-                        else if (mStopped) onLaunch(member.id);
-                        else onStop(member.id);
-                      }}
-                      title={mRunning ? "Open" : mStopped ? "Start" : "Stop"}
-                    >
-                      {mRunning ? "↗" : mStopped ? "▶" : "■"}
-                    </button>
-                  </div>
-
-                  {/* Per-member ⋯ quick-actions menu — always present (quiet faint icon that
-                      brightens on hover, via CardMenu's own styling) so it's discoverable. */}
-                  <div className="shrink-0 opacity-70 group-hover/member:opacity-100 transition-opacity duration-[120ms] focus-within:opacity-100">
-                    <CardMenu app={member} onResult={onToast} size="sm" onEdit={onEdit} onRemove={onRemove} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                  member={member}
+                  dragging={activeMemberId === member.id}
+                  isOver={overMemberId === `member:${member.id}` && activeMemberId !== member.id}
+                  onLaunch={onLaunch}
+                  onStop={onStop}
+                  onToast={onToast}
+                  onEdit={onEdit}
+                  onRemove={onRemove}
+                  onFavorite={onFavorite}
+                />
+              ))}
+            </div>
+          </SortableContext>
         )}
       </div>
     </article>
+  );
+}
+
+// ── Sortable member row (drag to reorder within group / out to ungroup) ───────
+function MemberRow({
+  member,
+  dragging,
+  isOver,
+  onLaunch,
+  onStop,
+  onToast,
+  onEdit,
+  onRemove,
+  onFavorite,
+}: {
+  member: AppView;
+  dragging: boolean;
+  isOver: boolean;
+  onLaunch: (id: string) => void;
+  onStop: (id: string) => void;
+  onToast: (kind: "success" | "error", message: string) => void;
+  onEdit?: (app: AppView) => void;
+  onRemove?: (app: AppView) => void;
+  onFavorite?: (id: string, favorite: boolean) => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
+    id: `member:${member.id}`,
+    data: { drag: { kind: "app", app: member } as DragKind },
+  });
+
+  const mMeta = statusMeta(member.status);
+  const mStopped = member.status === "Stopped";
+  const mRunning = member.status === "Running";
+
+  const style: React.CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    opacity: dragging ? 0.4 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "relative flex items-center gap-2 px-1 py-1.5 rounded-[5px] transition-colors duration-[120ms] group/member",
+        "hover:bg-surface-card-hover",
+        isOver && "bg-accent/10 ring-1 ring-inset ring-accent/40",
+      )}
+    >
+      {/* Drag grip — the explicit handle (whole row is draggable too via listeners). */}
+      <button
+        {...attributes}
+        {...listeners}
+        className="shrink-0 cursor-grab text-text-faint/40 hover:text-text-secondary active:cursor-grabbing transition-colors duration-[120ms] touch-none"
+        title="Drag to reorder or regroup"
+        aria-label="Drag handle"
+      >
+        <GripVertical className="h-3 w-3" />
+      </button>
+
+      {/* Per-member status rail (2px, shorter) */}
+      <span
+        className={cn(
+          "w-0.5 h-6 rounded-full shrink-0",
+          mMeta.railClass,
+          mStopped && "opacity-25",
+        )}
+      />
+
+      {/* Favorite star */}
+      <button
+        onClick={() => onFavorite?.(member.id, !member.favorite)}
+        className={cn(
+          "shrink-0 transition-all duration-[120ms] hover:scale-110 active:scale-95",
+          member.favorite ? "text-[#E5C04B]" : "text-text-faint/50 hover:text-[#E5C04B]/80",
+        )}
+        title={member.favorite ? "Remove favorite" : "Add to favorites"}
+        aria-pressed={member.favorite}
+      >
+        <Star className="h-3 w-3" fill={member.favorite ? "currentColor" : "none"} />
+      </button>
+
+      {/* Member identity: name + role chip */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className="text-xs font-medium text-text-secondary truncate">
+            {member.name}
+          </span>
+          {member.role && <RoleChip role={member.role} />}
+        </div>
+        {member.port && <span className="meta-mono text-2xs">{`:${member.port}`}</span>}
+      </div>
+
+      {/* Status dot + quick action (hover-only) */}
+      <div className="relative shrink-0 flex items-center justify-center w-4 h-4">
+        <StatusDot
+          status={member.status}
+          className="absolute group-hover/member:opacity-0 transition-opacity duration-[120ms]"
+        />
+        <button
+          className="absolute opacity-0 group-hover/member:opacity-100 transition-opacity duration-[120ms] btn-ghost-action text-2xs py-0 px-0 w-full h-full flex items-center justify-center"
+          onClick={() => {
+            if (mRunning) window.open(member.url, "_blank");
+            else if (mStopped) onLaunch(member.id);
+            else onStop(member.id);
+          }}
+          title={mRunning ? "Open" : mStopped ? "Start" : "Stop"}
+        >
+          {mRunning ? "↗" : mStopped ? "▶" : "■"}
+        </button>
+      </div>
+
+      {/* Per-member ⋯ menu */}
+      <div className="shrink-0 opacity-70 group-hover/member:opacity-100 transition-opacity duration-[120ms] focus-within:opacity-100">
+        <CardMenu app={member} onResult={onToast} size="sm" onEdit={onEdit} onRemove={onRemove} />
+      </div>
+    </div>
   );
 }

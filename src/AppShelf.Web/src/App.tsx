@@ -1,8 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { Search, Plus, RefreshCw, Layers, LayoutGrid, Activity } from "lucide-react";
 import { useBridge } from "@/lib/use-bridge";
-import { AppCard } from "@/components/app-card";
-import { GroupCard } from "@/components/group-card";
+import { CardGridDnd, type CardEntry, type StandaloneView } from "@/components/card-grid-dnd";
 import { PortDoctor } from "@/components/port-doctor";
 import { Toast, type ToastState } from "@/components/toast";
 import { AppDialog } from "@/components/app-dialog";
@@ -14,17 +13,6 @@ import type { AppView } from "@/lib/types";
 type Tab = "apps" | "ports";
 
 // ── Group aggregation ──────────────────────────────────────────────────────
-interface GroupedView {
-  type: "group";
-  name: string;
-  members: AppView[];
-}
-interface StandaloneView {
-  type: "standalone";
-  app: AppView;
-}
-type CardEntry = GroupedView | StandaloneView;
-
 function buildCardEntries(apps: AppView[]): CardEntry[] {
   const groups = new Map<string, AppView[]>();
   const standalones: AppView[] = [];
@@ -69,7 +57,7 @@ function buildCardEntries(apps: AppView[]): CardEntry[] {
 
 // ── Root app ───────────────────────────────────────────────────────────────
 export default function App() {
-  const { apps, loading, error, connected, refresh, launch, stop, toggleFavorite } = useBridge();
+  const { apps, loading, error, connected, refresh, launch, stop, toggleFavorite, regroupOptimistic, setDragging } = useBridge();
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<Tab>("apps");
   const [toast, setToast] = useState<ToastState | null>(null);
@@ -279,14 +267,17 @@ export default function App() {
               }
             />
           ) : (
-            <CardGrid
+            <CardGridDnd
               entries={entries}
+              apps={apps}
               onLaunch={launch}
               onStop={stop}
               onToast={onToast}
               onEdit={openEdit}
               onRemove={requestRemove}
               onFavorite={toggleFavorite}
+              onRegroup={regroupOptimistic}
+              onDragStateChange={setDragging}
             />
           )}
         </main>
@@ -342,65 +333,6 @@ function TabButton({
       {icon}
       {children}
     </button>
-  );
-}
-
-// ── Card grid ──────────────────────────────────────────────────────────────
-function CardGrid({
-  entries,
-  onLaunch,
-  onStop,
-  onToast,
-  onEdit,
-  onRemove,
-  onFavorite,
-}: {
-  entries: CardEntry[];
-  onLaunch: (id: string) => void;
-  onStop: (id: string) => void;
-  onToast: (kind: "success" | "error", message: string) => void;
-  onEdit: (app: AppView) => void;
-  onRemove: (app: AppView) => void;
-  onFavorite: (id: string, favorite: boolean) => void;
-}) {
-  return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3">
-      {entries.map((entry, i) => {
-        const delay = Math.min(i * 35, 200);
-        const style = { animationDelay: `${delay}ms` };
-
-        if (entry.type === "group") {
-          return (
-            <GroupCard
-              key={`group-${entry.name}`}
-              name={entry.name}
-              members={entry.members}
-              onLaunch={onLaunch}
-              onStop={onStop}
-              onToast={onToast}
-              onEdit={onEdit}
-              onRemove={onRemove}
-              onFavorite={onFavorite}
-              style={style}
-            />
-          );
-        }
-
-        return (
-          <AppCard
-            key={entry.app.id}
-            app={entry.app}
-            onLaunch={onLaunch}
-            onStop={onStop}
-            onToast={onToast}
-            onEdit={onEdit}
-            onRemove={onRemove}
-            onFavorite={onFavorite}
-            style={style}
-          />
-        );
-      })}
-    </div>
   );
 }
 

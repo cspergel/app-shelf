@@ -230,6 +230,16 @@ public sealed class AppShelfBridge
             case "listGroups":
                 return ListGroups();
 
+            // ── Drag-to-group ───────────────────────────────────────────────
+            case "applyRegroup":
+                return ApplyRegroup(args);
+
+            case "renameGroup":
+            {
+                _service.RenameGroup(RequireString(args, "oldName"), RequireString(args, "newName"));
+                return ListApps();
+            }
+
             case "reservedPorts":
                 return _service.ReservedPorts(OptionalString(args, "excludeId")).ToArray();
 
@@ -238,12 +248,21 @@ public sealed class AppShelfBridge
         }
     }
 
-    private IReadOnlyList<AppView> ListApps() =>
-        _service.LoadApps()
-            .Select(a => new AppView(
-                a.Id, a.Name, a.Url, a.Framework, a.Favorite,
-                a.Group, a.Role, a.Port, StatusFor(a), a.Tags, a.Dir))
-            .ToList();
+    /// <summary>Project all apps with their live status. StatusFor performs a blocking TCP probe
+    /// (up to ~500 ms × address-family count per app). Running the probes sequentially made a
+    /// 3-app list take up to ~3 s, causing the periodic poll to collide with dnd-kit settling
+    /// after a drop. We run them concurrently here so total wall-clock time ≈ one probe's budget
+    /// regardless of app count. The engine is thread-safe (ProcessManager uses ConcurrentDictionary
+    /// and static port-check helpers) so concurrent calls are safe.</summary>
+    private IReadOnlyList<AppView> ListApps()
+    {
+        var entries = _service.LoadApps();
+        // Project each app with its status concurrently (TCP probe per app).
+        var tasks = entries.Select(a => Task.Run(() => new AppView(
+            a.Id, a.Name, a.Url, a.Framework, a.Favorite,
+            a.Group, a.Role, a.Port, StatusFor(a), a.Tags, a.Dir))).ToArray();
+        return Task.WhenAll(tasks).GetAwaiter().GetResult();
+    }
 
     /// <summary>Scan live listeners and project each <see cref="PortReport"/> to the rich row the
     /// Port Doctor view renders (one row per report, ancestry included).</summary>
@@ -462,6 +481,119 @@ public sealed class AppShelfBridge
         return (allocated, false);
     }
 
+    // ── Drag-to-group ─────────────────────────────────────────────────────────
+
+    /// <summary>Apply a drag-to-group gesture. The JS side sends a HIGH-LEVEL intent
+    /// (<c>{ draggedId, target }</c>); planning stays in Core. The bridge maps the intent to a
+    /// <see cref="DropTarget"/>, runs <see cref="RegroupPlanner.Plan"/>, and persists via
+    /// <see cref="GuiAppService.ApplyRegroup"/> — mirroring what <c>CardDragDrop.cs</c> +
+    /// <c>MainViewModel.Regroup</c> do in the WPF path. Returns the refreshed app list so the UI can
+    /// reconcile.
+    ///
+    /// A <see cref="DropKind.NewGroup"/> plan normally needs the name/role dialog. The web UI shows
+    /// that dialog itself and re-calls with <c>groupName</c> (+ optional per-app <c>roles</c>)
+    /// overrides; the bridge rewrites the plan's changes with them before applying — exactly the
+    /// rewrite <c>MainViewModel.PromptForNewGroup</c> does. When a NewGroup plan arrives WITHOUT an
+    /// override, the bridge returns the plan metadata (kind + suggestedGroupName + the seeds) so the
+    /// JS side can open its dialog — nothing is persisted.</summary>
+    private object ApplyRegroup(JsonElement args)
+    {
+        var draggedId = RequireString(args, "draggedId");
+        var target = ParseDropTarget(args);
+
+        var plan = RegroupPlanner.Plan(draggedId, target, _service.LoadApps());
+        if (plan.Kind == DropKind.NoOp)
+            return new { applied = false, needsNameDialog = false, apps = ListApps() };
+
+        if (plan.NeedsNameDialog)
+        {
+            var groupOverride = OptionalString(args, "groupName")?.Trim();
+            if (string.IsNullOrWhiteSpace(groupOverride))
+            {
+                // No name chosen yet → hand the plan back so the JS side opens its name/role dialog.
+                // Nothing is persisted on this call.
+                return new
+                {
+                    applied = false,
+                    needsNameDialog = true,
+                    suggestedGroupName = plan.SuggestedGroupName,
+                    seeds = SeedsFor(plan),
+                };
+            }
+
+            plan = RewriteNewGroup(plan, groupOverride, ParseRoleOverrides(args));
+        }
+
+        _service.ApplyRegroup(plan);
+        return new { applied = true, needsNameDialog = false, apps = ListApps() };
+    }
+
+    /// <summary>Map the JS intent's <c>target</c> object to a Core <see cref="DropTarget"/>. The
+    /// shape mirrors the planner's targets: <c>{ kind: "onApp", appId }</c>,
+    /// <c>{ kind: "onGroup", groupName }</c>, <c>{ kind: "onCanvas" }</c>, or
+    /// <c>{ kind: "atMemberIndex", groupName, index }</c>.</summary>
+    private static DropTarget ParseDropTarget(JsonElement args)
+    {
+        if (!args.TryGetProperty("target", out var t) || t.ValueKind != JsonValueKind.Object)
+            throw new ArgumentException("Missing 'target' argument.");
+
+        var kind = RequireString(t, "kind");
+        return kind switch
+        {
+            "onApp" => new OnApp(RequireString(t, "appId")),
+            "onGroup" => new OnGroup(RequireString(t, "groupName")),
+            "onCanvas" => new OnCanvas(),
+            "atMemberIndex" => new AtMemberIndex(RequireString(t, "groupName"), RequireInt(t, "index")),
+            _ => throw new ArgumentException($"Unknown drop target kind '{kind}'."),
+        };
+    }
+
+    /// <summary>The per-app seeds (id + name + suggested role) for a NewGroup plan, so the JS name/role
+    /// dialog can show each app with a smart-prefilled role. Mirrors MainViewModel's GroupMemberSeed.</summary>
+    private object SeedsFor(RegroupPlan plan)
+    {
+        var apps = _service.LoadApps();
+        return plan.Changes
+            .Select(c => new
+            {
+                id = c.AppId,
+                name = apps.FirstOrDefault(a => a.Id == c.AppId)?.Name ?? c.AppId,
+                role = c.Role,
+            })
+            .ToArray();
+    }
+
+    /// <summary>Rewrite a NewGroup plan's changes with the chosen group name and (optional) per-app
+    /// role overrides — the same rewrite MainViewModel.PromptForNewGroup performs after the dialog.</summary>
+    private static RegroupPlan RewriteNewGroup(
+        RegroupPlan plan, string groupName, IReadOnlyDictionary<string, string> roles)
+    {
+        var changes = plan.Changes
+            .Select(c => c with
+            {
+                Group = groupName,
+                Role = roles.TryGetValue(c.AppId, out var role) ? NormalizeRole(role) : c.Role,
+            })
+            .ToList();
+
+        return plan with { Changes = changes, SuggestedGroupName = groupName };
+    }
+
+    /// <summary>Parse an optional <c>roles</c> object (<c>{ appId: role }</c>) from the args.</summary>
+    private static IReadOnlyDictionary<string, string> ParseRoleOverrides(JsonElement args)
+    {
+        var map = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (args.TryGetProperty("roles", out var roles) && roles.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in roles.EnumerateObject())
+            {
+                if (prop.Value.ValueKind == JsonValueKind.String)
+                    map[prop.Name] = prop.Value.GetString() ?? AppRoles.Other;
+            }
+        }
+        return map;
+    }
+
     /// <summary>Distinct existing non-empty group names (case-insensitive, sorted) for the dialog's
     /// Group datalist.</summary>
     private IReadOnlyList<string> ListGroups() =>
@@ -534,13 +666,20 @@ public sealed class AppShelfBridge
     /// owner-aware behavior for the WPF path and launch pre-flight.
     ///
     /// All other statuses (Stopped/Starting/Running/Error) pass through verbatim — identical to what
-    /// the enum-string serializer would have produced.</summary>
+    /// the enum-string serializer would have produced.
+    ///
+    /// Uses a short TCP probe timeout (150 ms) — the web poll fires every ~2 s and all apps are
+    /// probed concurrently; localhost either answers in &lt;10 ms or the port is closed/filtered.
+    /// A 150 ms budget is far more than enough and keeps a stopped-app full poll well under ~200 ms
+    /// regardless of app count. Launch and Port Doctor use the default 500 ms path (unchanged).</summary>
+    private const int FastProbeTimeoutMs = 150;
+
     private string StatusFor(AppEntry entry)
     {
         if (_service.DidManagedAppExit(entry))
             return StoppedUnexpectedly;
 
-        var status = _service.StatusOf(entry);
+        var status = _service.StatusOf(entry, FastProbeTimeoutMs);
         if (status == LaunchStatus.PortInUse)
             return LaunchStatus.Running.ToString();
 

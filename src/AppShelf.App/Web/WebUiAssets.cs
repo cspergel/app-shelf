@@ -37,9 +37,26 @@ internal static class WebUiAssets
             "AppShelf", "webui", version);
         var marker = Path.Combine(root, CompleteMarker);
 
-        // Fast path: this exact version was already extracted cleanly.
+        // Fast path: this exact version was already extracted cleanly AND the exe
+        // has not been rebuilt since (guards against a rebuild with the same version number
+        // producing a stale extraction — the exe write-time is always >= the embedded zip).
         if (File.Exists(marker) && File.Exists(Path.Combine(root, "index.html")))
-            return root;
+        {
+            var exePath = Environment.ProcessPath;
+            if (exePath is not null)
+            {
+                var exeWritten = File.GetLastWriteTimeUtc(exePath);
+                if (DateTime.TryParse(File.ReadAllText(marker), out var markerTime)
+                    && markerTime >= exeWritten)
+                    return root;
+                // Exe is newer than marker → embedded zip was updated; re-extract.
+            }
+            else
+            {
+                // Can't determine exe path (single-file self-extract edge case); trust marker.
+                return root;
+            }
+        }
 
         // Re-extract from scratch (covers an aborted previous run). Remove any partial folder first.
         if (Directory.Exists(root))
