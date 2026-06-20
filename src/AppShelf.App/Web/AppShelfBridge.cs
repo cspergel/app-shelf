@@ -1,8 +1,10 @@
+using System.IO;
 using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Windows.Threading;
 using AppShelf.App.Services;
+using AppShelf.Core.Launch;
 using AppShelf.Core.Models;
 using AppShelf.Core.Process;
 using Microsoft.Web.WebView2.Wpf;
@@ -45,10 +47,13 @@ public sealed class AppShelfBridge
     /// <summary>What JS posts: a method name, optional args, and a correlation id.</summary>
     private sealed record Request(string RequestId, string Method, JsonElement Args);
 
-    /// <summary>Card-grid row: an <see cref="AppEntry"/> projection + its live status.</summary>
+    /// <summary>Card-grid row: an <see cref="AppEntry"/> projection + its live status.
+    /// <c>Dir</c> is included so the web UI can hide dir-dependent quick actions (open
+    /// terminal/editor/folder/.env, copy path) for URL-only apps.</summary>
     private sealed record AppView(
         string Id, string Name, string Url, string? Framework, bool Favorite,
-        string? Group, string Role, int? Port, string Status, IReadOnlyList<string> Tags);
+        string? Group, string Role, int? Port, string Status, IReadOnlyList<string> Tags,
+        string? Dir);
 
     /// <summary>Port Doctor row: a rich <see cref="PortReport"/> projection. Unlike the CLI's
     /// <see cref="AppShelf.Core.Process.PortReportJson"/> (flat, drops ancestry) this keeps the full
@@ -125,6 +130,43 @@ public sealed class AppShelfBridge
                 return null;
             }
 
+            // ── Quick dev actions (per-app ⋯ menu) ───────────────────────────
+            case "openTerminal":
+                return QuickResult(QuickActions.OpenTerminal(ResolveApp(args).Dir));
+
+            case "openEditor":
+                return QuickResult(QuickActions.OpenEditor(ResolveApp(args).Dir, null));
+
+            case "openFolder":
+                return QuickResult(QuickActions.OpenFolder(ResolveApp(args).Dir));
+
+            case "openEnv":
+            {
+                var entry = ResolveApp(args);
+                if (string.IsNullOrWhiteSpace(entry.Dir))
+                    return QuickResult(QuickActions.ActionResult.Fail("This app has no folder (it's URL-only)."));
+
+                var envPath = Path.Combine(entry.Dir, ".env");
+                if (!File.Exists(envPath))
+                    return QuickResult(QuickActions.ActionResult.Fail("No .env in this folder."));
+
+                return QuickResult(QuickActions.OpenFile(envPath));
+            }
+
+            case "openDocs":
+            {
+                var entry = ResolveApp(args);
+                if (string.IsNullOrWhiteSpace(entry.Url))
+                    return QuickResult(QuickActions.ActionResult.Fail("This app has no URL."));
+
+                // FastAPI serves interactive docs at /docs; everyone else just opens the app URL.
+                // (A per-app docsPath field is a future add.)
+                var url = IsFastApi(entry.Framework)
+                    ? CombineUrl(entry.Url, "/docs")
+                    : entry.Url;
+                return QuickResult(QuickActions.OpenUrl(url));
+            }
+
             // ── Port Doctor ─────────────────────────────────────────────────
             case "scanPorts":
                 return ScanPorts();
@@ -169,7 +211,7 @@ public sealed class AppShelfBridge
         _service.LoadApps()
             .Select(a => new AppView(
                 a.Id, a.Name, a.Url, a.Framework, a.Favorite,
-                a.Group, a.Role, a.Port, StatusFor(a), a.Tags))
+                a.Group, a.Role, a.Port, StatusFor(a), a.Tags, a.Dir))
             .ToList();
 
     /// <summary>Scan live listeners and project each <see cref="PortReport"/> to the rich row the
@@ -220,6 +262,21 @@ public sealed class AppShelfBridge
 
         return status.ToString();
     }
+
+    /// <summary>Project a <see cref="QuickActions.ActionResult"/> to the JS <c>{ ok, reason }</c>
+    /// shape (camelCased by the serializer). Quick actions never throw — a failure is a friendly
+    /// reason the UI toasts, not a rejected promise.</summary>
+    private static object QuickResult(QuickActions.ActionResult result) =>
+        new { ok = result.Success, reason = result.Reason };
+
+    /// <summary>True when the app's detected framework is FastAPI (so /docs is meaningful).</summary>
+    private static bool IsFastApi(string? framework) =>
+        framework is not null &&
+        framework.Contains("FastAPI", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Join a base URL with a path segment, collapsing a double slash at the seam.</summary>
+    private static string CombineUrl(string baseUrl, string path) =>
+        $"{baseUrl.TrimEnd('/')}/{path.TrimStart('/')}";
 
     /// <summary>Resolve an <c>{ id }</c> arg to a live <see cref="AppEntry"/> via the config store
     /// (so we never trust a stale entry the JS side might have cached).</summary>

@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Search, Plus, RefreshCw, Layers, LayoutGrid, Activity } from "lucide-react";
 import { useBridge } from "@/lib/use-bridge";
 import { AppCard } from "@/components/app-card";
 import { GroupCard } from "@/components/group-card";
 import { PortDoctor } from "@/components/port-doctor";
+import { Toast, type ToastState } from "@/components/toast";
 import { cn } from "@/lib/utils";
 import type { AppView } from "@/lib/types";
 
@@ -60,6 +61,12 @@ export default function App() {
   const { apps, loading, error, connected, refresh, launch, stop } = useBridge();
   const [query, setQuery] = useState("");
   const [tab, setTab] = useState<Tab>("apps");
+  const [toast, setToast] = useState<ToastState | null>(null);
+
+  const onToast = useCallback(
+    (kind: "success" | "error", message: string) => setToast({ kind, message }),
+    [],
+  );
 
   // Stats for the header badge
   const runningCount = apps.filter((a) => a.status === "Running").length;
@@ -208,10 +215,13 @@ export default function App() {
               }
             />
           ) : (
-            <CardGrid entries={entries} onLaunch={launch} onStop={stop} />
+            <CardGrid entries={entries} onLaunch={launch} onStop={stop} onToast={onToast} />
           )}
         </main>
       )}
+
+      {/* Quick-action result toast (success + friendly failures) */}
+      <Toast toast={toast} onDismiss={() => setToast(null)} />
     </div>
   );
 }
@@ -250,10 +260,12 @@ function CardGrid({
   entries,
   onLaunch,
   onStop,
+  onToast,
 }: {
   entries: CardEntry[];
   onLaunch: (id: string) => void;
   onStop: (id: string) => void;
+  onToast: (kind: "success" | "error", message: string) => void;
 }) {
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3">
@@ -269,6 +281,7 @@ function CardGrid({
               members={entry.members}
               onLaunch={onLaunch}
               onStop={onStop}
+              onToast={onToast}
               style={style}
             />
           );
@@ -280,6 +293,7 @@ function CardGrid({
             app={entry.app}
             onLaunch={onLaunch}
             onStop={onStop}
+            onToast={onToast}
             style={style}
           />
         );

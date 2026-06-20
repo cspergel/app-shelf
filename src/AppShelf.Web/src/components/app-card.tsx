@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Play, Square, ExternalLink, RotateCcw, MoreHorizontal, Star, AlertTriangle, WifiOff } from "lucide-react";
+import { Play, Square, ExternalLink, RotateCcw, Star, AlertTriangle, WifiOff } from "lucide-react";
 import { StatusDot, StatusRail, statusMeta } from "./status-dot";
+import { CardMenu } from "./card-menu";
 import { cn } from "@/lib/utils";
 import type { AppView } from "@/lib/types";
 
@@ -8,10 +9,11 @@ interface AppCardProps {
   app: AppView;
   onLaunch: (id: string) => void;
   onStop: (id: string) => void;
+  onToast: (kind: "success" | "error", message: string) => void;
   style?: React.CSSProperties;
 }
 
-export function AppCard({ app, onLaunch, onStop, style }: AppCardProps) {
+export function AppCard({ app, onLaunch, onStop, onToast, style }: AppCardProps) {
   const meta = statusMeta(app.status);
   const [favored, setFavored] = useState(app.favorite);
 
@@ -69,13 +71,8 @@ export function AppCard({ app, onLaunch, onStop, style }: AppCardProps) {
             />
           </button>
 
-          {/* Overflow menu — borderless, demoted rightmost */}
-          <button
-            className="mt-0.5 shrink-0 text-text-faint transition-colors duration-[120ms] hover:text-text-secondary rounded p-0.5 hover:bg-surface-card-hover"
-            title="More options"
-          >
-            <MoreHorizontal className="h-3.5 w-3.5" />
-          </button>
+          {/* Overflow menu — quick dev actions (terminal/editor/folder/.env/docs/copy) */}
+          <CardMenu app={app} onResult={onToast} />
         </div>
 
         {/* ── META ROW: framework · port · url ──────────────────────────── */}

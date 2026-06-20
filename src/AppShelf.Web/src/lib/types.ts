@@ -24,6 +24,14 @@ export interface AppView {
   port: number | null;
   status: LaunchStatus;
   tags?: string[];
+  /** Working directory; null for URL-only apps (dir-dependent quick actions are hidden). */
+  dir?: string | null;
+}
+
+/** Result shape the quick-action bridge methods resolve with (mirrors C# { ok, reason }). */
+export interface QuickActionResult {
+  ok: boolean;
+  reason: string | null;
 }
 
 // ── Port Doctor ──────────────────────────────────────────────────────────────

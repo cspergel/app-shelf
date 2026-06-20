@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { ChevronRight, Play, Square, ExternalLink, MoreHorizontal } from "lucide-react";
+import { ChevronRight, Play, Square, ExternalLink } from "lucide-react";
 import { StatusDot, statusMeta } from "./status-dot";
+import { CardMenu } from "./card-menu";
 import { cn } from "@/lib/utils";
 import type { AppView, LaunchStatus } from "@/lib/types";
 
@@ -9,6 +10,7 @@ interface GroupCardProps {
   members: AppView[];
   onLaunch: (id: string) => void;
   onStop: (id: string) => void;
+  onToast: (kind: "success" | "error", message: string) => void;
   style?: React.CSSProperties;
 }
 
@@ -57,7 +59,7 @@ function RoleChip({ role }: { role: string }) {
   );
 }
 
-export function GroupCard({ name, members, onLaunch, onStop, style }: GroupCardProps) {
+export function GroupCard({ name, members, onLaunch, onStop, onToast, style }: GroupCardProps) {
   const [expanded, setExpanded] = useState(true);
   const aggStatus = aggregateStatus(members);
   const aggMeta = statusMeta(aggStatus);
@@ -113,14 +115,6 @@ export function GroupCard({ name, members, onLaunch, onStop, style }: GroupCardP
             <StatusDot status={aggStatus} />
             <span className="text-xs font-medium whitespace-nowrap">{label}</span>
           </div>
-
-          {/* Overflow */}
-          <button
-            className="shrink-0 text-text-faint hover:text-text-secondary transition-colors duration-[120ms] rounded p-0.5 hover:bg-surface-card-hover"
-            title="Group options"
-          >
-            <MoreHorizontal className="h-3.5 w-3.5" />
-          </button>
         </div>
 
         {/* Sub-label: member frameworks summarized */}
@@ -226,6 +220,11 @@ export function GroupCard({ name, members, onLaunch, onStop, style }: GroupCardP
                     >
                       {mRunning ? "↗" : mStopped ? "▶" : "■"}
                     </button>
+                  </div>
+
+                  {/* Per-member ⋯ quick-actions menu (visible on member-row hover or when open) */}
+                  <div className="shrink-0 opacity-0 group-hover/member:opacity-100 transition-opacity duration-[120ms] focus-within:opacity-100">
+                    <CardMenu app={member} onResult={onToast} size="sm" />
                   </div>
                 </div>
               );

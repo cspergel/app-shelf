@@ -21,6 +21,7 @@ export const MOCK_APPS: AppView[] = [
     port: 5173,
     status: "Running",
     tags: ["#snf", "#clinical"],
+    dir: "C:\\dev\\snf\\frontend",
   },
   {
     id: "snf-backend",
@@ -33,6 +34,7 @@ export const MOCK_APPS: AppView[] = [
     port: 8000,
     status: "Running",
     tags: ["#snf"],
+    dir: "C:\\dev\\snf\\backend",
   },
 
   // ── Standalone apps ───────────────────────────────────────────────────────
@@ -47,6 +49,7 @@ export const MOCK_APPS: AppView[] = [
     port: 3000,
     status: "Stopped",
     tags: ["#personal"],
+    dir: "C:\\dev\\portfolio",
   },
   {
     id: "design-system",
@@ -59,6 +62,7 @@ export const MOCK_APPS: AppView[] = [
     port: 6006,
     status: "Starting",
     tags: ["#ui", "#personal"],
+    dir: "C:\\dev\\design-system",
   },
   {
     id: "ml-dashboard",
@@ -71,6 +75,7 @@ export const MOCK_APPS: AppView[] = [
     port: 8501,
     status: "StoppedUnexpectedly",
     tags: ["#ml"],
+    dir: "C:\\dev\\ml-dashboard",
   },
   {
     id: "dev-proxy",
@@ -83,6 +88,22 @@ export const MOCK_APPS: AppView[] = [
     port: 8080,
     status: "PortInUse",
     tags: [],
+    dir: "C:\\dev\\dev-proxy",
+  },
+
+  // URL-only app (no dir) — dir-dependent quick actions are hidden for this one.
+  {
+    id: "internal-wiki",
+    name: "Internal Wiki",
+    url: "https://wiki.internal.example.com",
+    framework: null,
+    favorite: false,
+    group: null,
+    role: "",
+    port: null,
+    status: "Running",
+    tags: ["#docs"],
+    dir: null,
   },
 ];
 
