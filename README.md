@@ -44,6 +44,14 @@ of that from one window — and, crucially, **stops cleanly**: it kills the whol
   confirm/edit — it never guesses silently.
 - **Hand-editable JSON config** at `%APPDATA%/AppShelf/config.json`. No database, no migrations,
   git-versionable.
+- **Spotlight overlay** — press **Alt+Space** (configurable) from anywhere to fuzzy-search
+  and launch any registered app without opening the main window.
+- **Tray quick-launch** — right-click the tray icon to launch or stop any app directly from
+  the menu, without opening the main window.
+- **Live log viewer** — per-app log panel in the main window streams stdout/stderr in real
+  time, auto-surfaces on crash.
+- **Crash watcher** — detects unexpected exits and surfaces a tray balloon + error card so
+  zombie dev servers don't go unnoticed.
 
 ## Screenshots
 
@@ -59,9 +67,12 @@ of that from one window — and, crucially, **stops cleanly**: it kills the whol
 
 ## Requirements
 
-- **Windows 10 or 11** (x64). AppShelf is Windows-only by design (WPF + Win32 Job Objects).
-- **.NET 8 SDK** to build from source, or the **.NET 8 Desktop Runtime** to run a framework-dependent
-  build. (Pre-built releases are self-contained — no runtime needed.)
+- **Windows 10 or 11** (x64). AppShelf uses WPF + Win32 Job Objects — Windows-only by design.
+- **WebView2 Runtime** — pre-installed on Windows 11. On Windows 10, install the
+  [Evergreen WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)
+  if AppShelf shows a blank white window on first run.
+- **.NET 8 SDK** to build from source. Pre-built releases are **self-contained** — no .NET
+  runtime or WebView2 SDK needed at runtime.
 
 ## Install
 
@@ -73,11 +84,20 @@ of that from one window — and, crucially, **stops cleanly**: it kills the whol
 ### Option B — build from source
 
 ```powershell
-git clone <your-fork-url> AppShelf
+git clone https://github.com/cspergel/app-shelf AppShelf
 cd AppShelf
-dotnet build AppShelf.sln
-dotnet run --project src/AppShelf.App
+
+# (DEBUG mode — live web UI with hot reload)
+cd src/AppShelf.Web
+npm install
+npm run dev          # start the Vite dev server (leave this running)
+cd ../..
+dotnet run --project src/AppShelf.App   # navigates to http://localhost:5199
 ```
+
+> For a self-contained Release build (no Vite server needed), run:
+> `dotnet publish src/AppShelf.App -c Release -r win-x64 --self-contained`
+> The output is `dist/AppShelf.exe`.
 
 ### CLI on your PATH
 
@@ -123,22 +143,26 @@ directory to use them. Ignore the folder entirely if you don't use Claude Code.
 
 ## Known limitations
 
-- **Spotlight overlay** (global-hotkey search launcher) is **not built yet** — it's the planned
-  daily-driver feature.
-- The dark theme doesn't yet restyle dropdowns (they keep stock Windows chrome).
-- Killing a port held by a Windows **service** can fail with "Access is denied" (you'd need an
-  elevated terminal); AppShelf surfaces the reason rather than silently failing.
+- The dark theme doesn't restyle native Windows dropdowns (they keep stock Windows chrome) —
+  Tailwind 3 bakes literal hex at build time and cannot switch themes at runtime via CSS variables.
+- Killing a port held by a Windows **service** requires elevation; AppShelf will prompt for UAC
+  and surface a clear error if the stop fails.
 
 ## Architecture
 
 - **`AppShelf.Core`** — the real engine (models, config, stack detection, process/job control,
   launch). A pure library: no UI, no `Console`. This is the single source of truth for all logic.
-- **`AppShelf.Cli`** (`appshelf`) and **`AppShelf.App`** (WPF tray + grid) are thin front doors —
-  they parse args / bind UI and call into Core. No business logic lives in them.
+- **`AppShelf.App`** — WPF shell that hosts a **WebView2 control** showing the full React/Tailwind
+  web UI (`src/AppShelf.Web/`). The tray icon and Spotlight overlay (global-hotkey launcher) remain
+  WPF — everything else is the web layer. `AppShelfBridge.cs` handles JS↔C# message-passing.
+- **`AppShelf.Cli`** (`appshelf`) — a single-file `appshelf.exe` for the command line.
+- **`src/AppShelf.Web/`** — Vite + React + TypeScript + Tailwind CSS v3, served to WebView2
+  (RELEASE: embedded zip extracted to `%LOCALAPPDATA%/AppShelf/webui/`; DEBUG: live Vite dev
+  server at `http://localhost:5199`).
 - Config is JSON via `System.Text.Json`; process trees are killed via Win32 Job Objects
   (`KILL_ON_JOB_CLOSE`); liveness is a dual-stack TCP connect check.
 
-137 xUnit tests cover Core.
+250 xUnit tests cover Core and the App layer.
 
 ## License
 
