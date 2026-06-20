@@ -3,7 +3,6 @@ using System.Threading;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Threading;
-using AppShelf.App.Dialogs;
 using AppShelf.App.Services;
 using AppShelf.App.Spotlight;
 using AppShelf.App.Tray;
@@ -84,6 +83,11 @@ public partial class App : Application
 
             _hotkey = new HotkeyService(_spotlight, ToggleSpotlight, _service.GetHotkey());
 
+            // Hand the hotkey live-register + active-read delegates to the main window so the web UI
+            // hotkey-settings panel (via the bridge's setHotkey/getHotkey) can drive HotkeyService.
+            // Stored on MainWindow and forwarded to the bridge whenever WebView2 init completes.
+            _window.SetHotkeyDelegate(_hotkey.TrySetHotkey, () => _hotkey?.ActiveHotkey);
+
             // Show on launch (so `appshelf open` produces a window); close hides back to the tray.
             _window.Show();
         }
@@ -145,30 +149,21 @@ public partial class App : Application
 
     private void ShowWindow() => _window.ShowFromTray();
 
+    /// <summary>Tray "Ports…": show the main window and switch the web UI to its Ports tab via the
+    /// C#→JS navigation push (the WPF PortsWindow dialog was removed in the WebView2 cutover).</summary>
     private void ShowPorts()
     {
-        var owner = _window.IsVisible ? _window : null;
-        var ports = new PortsWindow(_service, _dialogs) { Owner = owner };
-        ports.ShowDialog();
+        _window.ShowFromTray();
+        _window.PostNavigation("ports");
     }
 
-    /// <summary>Open the Hotkey settings dialog. A successful change re-registers the global hotkey
-    /// live (no restart) via <see cref="HotkeyService.TrySetHotkey"/> and persists it to config; the
-    /// dialog restores the previous binding if a chosen combo is already in use by another app.</summary>
+    /// <summary>Tray "Hotkey…": show the main window and open the web UI hotkey-settings panel via
+    /// the C#→JS navigation push. The panel persists + live-registers the new combo through the
+    /// bridge's setHotkey method (wired to <see cref="HotkeyService.TrySetHotkey"/>).</summary>
     private void ShowHotkeySettings()
     {
-        if (_hotkey is null)
-            return;
-
-        var owner = _window.IsVisible ? _window : null;
-        var dialog = new HotkeyWindow(
-            currentHotkey: _hotkey.ActiveHotkey,
-            tryRegister: _hotkey.TrySetHotkey,
-            persist: _service.SetHotkey)
-        {
-            Owner = owner,
-        };
-        dialog.ShowDialog();
+        _window.ShowFromTray();
+        _window.PostNavigation("hotkey-settings");
     }
 
     private void ToggleSpotlight()
@@ -186,7 +181,7 @@ public partial class App : Application
         var workArea = screen.WorkingArea;
 
         // SpotlightWindow uses SizeToContent, so force a layout pass to get a valid DesiredSize.
-        _spotlight.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        _spotlight.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
         _spotlight.Arrange(new Rect(_spotlight.DesiredSize));
 
         var source = PresentationSource.FromVisual(_spotlight)
@@ -213,11 +208,12 @@ public partial class App : Application
         _spotlight.Activate();
     }
 
+    /// <summary>Tray "Add app…": show the main window and open the web UI add-app dialog via the
+    /// C#→JS navigation push (the WPF add dialog was removed in the WebView2 cutover).</summary>
     private void AddFromTray()
     {
         _window.ShowFromTray();
-        if (_window.DataContext is MainViewModel vm && vm.AddCommand.CanExecute(null))
-            vm.AddCommand.Execute(null);
+        _window.PostNavigation("add-app");
     }
 
     private void QuitApp()

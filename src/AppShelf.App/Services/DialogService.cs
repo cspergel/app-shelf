@@ -1,42 +1,39 @@
-using System.Windows;
-using AppShelf.App.Dialogs;
 using AppShelf.Core.Models;
 
 namespace AppShelf.App.Services;
 
-/// <summary>WPF implementation of <see cref="IAppDialogs"/> — opens modal windows owned by
-/// the main window and routes confirmations through a message box.</summary>
+/// <summary>
+/// Null-object stub for <see cref="IAppDialogs"/>. The WPF add/edit/confirm/rename/group-create
+/// dialogs were removed in the WebView2 cutover — all user-facing dialogs now live in the
+/// React/Tailwind web UI and are driven directly through the JS↔C# bridge.
+///
+/// The remaining view models (<see cref="ViewModels.MainViewModel"/> and friends) are kept only
+/// for the crash-watcher path; their dialog call-sites are dead code (no WPF card grid binds them).
+/// This stub keeps those call-sites compiling as harmless no-ops without rewiring the VM
+/// constructors. Each method returns a safe default (no dialog is ever shown).
+/// </summary>
 public sealed class DialogService : IAppDialogs
 {
-    private readonly GuiAppService _service;
-
-    public DialogService(GuiAppService service) => _service = service;
-
-    public bool ShowAddDialog() => ShowEditor(existing: null);
-
-    public bool ShowEditDialog(AppEntry existing) => ShowEditor(existing);
-
-    private bool ShowEditor(AppEntry? existing)
+    public DialogService(GuiAppService service)
     {
-        var window = new AppEditWindow(_service, existing) { Owner = Application.Current.MainWindow };
-        return window.ShowDialog() == true;
+        // Service no longer needed (no dialogs to construct), but the ctor signature is kept so
+        // App.xaml.cs wiring is unchanged.
+        _ = service;
     }
 
-    public bool Confirm(string message, string title) =>
-        MessageBox.Show(message, title, MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes;
+    public bool ShowAddDialog() => false;
 
-    public void Info(string message, string title) =>
-        MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Information);
+    public bool ShowEditDialog(AppEntry existing) => false;
 
-    public string? PromptRename(string title, string label, string initial)
+    public bool Confirm(string message, string title) => false;
+
+    public void Info(string message, string title)
     {
-        var window = new RenameWindow(title, label, initial) { Owner = Application.Current.MainWindow };
-        return window.ShowDialog() == true ? window.Result : null;
+        // No-op: errors/info now surface as web UI toasts via the bridge.
     }
 
-    public GroupCreateResult? PromptGroupCreate(string suggestedName, IReadOnlyList<GroupMemberSeed> members)
-    {
-        var window = new GroupCreateWindow(suggestedName, members) { Owner = Application.Current.MainWindow };
-        return window.ShowDialog() == true ? window.Result : null;
-    }
+    public string? PromptRename(string title, string label, string initial) => null;
+
+    public GroupCreateResult? PromptGroupCreate(
+        string suggestedName, IReadOnlyList<GroupMemberSeed> members) => null;
 }

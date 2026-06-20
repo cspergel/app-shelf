@@ -38,12 +38,25 @@ public sealed class AppShelfBridge
     private readonly GuiAppService _service;
     private readonly Dispatcher _dispatcher;
 
+    // Hotkey wiring (injected by MainWindow.SetHotkeyDelegate after HotkeyService exists):
+    // live-register a combo and read the currently-active combo. Null until wired.
+    private Func<string?, bool>? _tryRegisterHotkey;
+    private Func<string?>? _getActiveHotkey;
+
     public AppShelfBridge(WebView2 webView, GuiAppService service)
     {
         _webView = webView;
         _service = service;
         _dispatcher = webView.Dispatcher;
         _webView.WebMessageReceived += OnWebMessageReceived;
+    }
+
+    /// <summary>Supply the hotkey live-register + active-read delegates. Called by
+    /// <see cref="MainWindow.SetHotkeyDelegate"/> once <c>HotkeyService</c> is constructed.</summary>
+    public void SetHotkeyDelegates(Func<string?, bool> tryRegister, Func<string?> getActive)
+    {
+        _tryRegisterHotkey = tryRegister;
+        _getActiveHotkey = getActive;
     }
 
     /// <summary>What JS posts: a method name, optional args, and a correlation id.</summary>
@@ -242,6 +255,29 @@ public sealed class AppShelfBridge
 
             case "reservedPorts":
                 return _service.ReservedPorts(OptionalString(args, "excludeId")).ToArray();
+
+            // ── Spotlight hotkey settings ───────────────────────────────────
+            case "getHotkey":
+                return new
+                {
+                    combo = _service.GetHotkey(),
+                    activeHotkey = _getActiveHotkey?.Invoke(),
+                };
+
+            case "setHotkey":
+            {
+                var combo = OptionalString(args, "combo");
+                // Persist first (atomic config write), then live-register. Win32 RegisterHotKey
+                // targets the overlay HWND, so marshal the register call onto the UI dispatcher
+                // (same pattern as PickFolder) — this dispatch body runs on a Task.Run thread.
+                _service.SetHotkey(combo);
+                var registered = _dispatcher.Invoke(() => _tryRegisterHotkey?.Invoke(combo) ?? true);
+                return new
+                {
+                    ok = registered,
+                    activeHotkey = _getActiveHotkey?.Invoke(),
+                };
+            }
 
             default:
                 throw new InvalidOperationException($"Unknown bridge method '{method}'.");

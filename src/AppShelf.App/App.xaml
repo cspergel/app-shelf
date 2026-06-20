@@ -8,8 +8,6 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Themes/AppShelf.xaml"/>
             </ResourceDictionary.MergedDictionaries>
-            <local:StatusToBrushConverter x:Key="StatusToBrush"/>
-            <local:GroupStatusToBrushConverter x:Key="GroupStatusToBrush"/>
             <local:BoolToVisibilityConverter x:Key="BoolToVis"/>
             <local:StringToVisibilityConverter x:Key="StringToVis"/>
         </ResourceDictionary>

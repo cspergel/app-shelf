@@ -13,6 +13,11 @@ public partial class MainWindow : Window
     private readonly GuiAppService _service;
     private AppShelfBridge? _bridge;
 
+    // Hotkey delegates injected from App.xaml.cs after HotkeyService is constructed. Stored here
+    // because the bridge is created asynchronously (WebView2 init), which may race the wiring call.
+    private Func<string?, bool>? _tryRegisterHotkey;
+    private Func<string?>? _getActiveHotkey;
+
     // Dev server the web UI is served from in DEBUG (see vite.config.ts → port 5199).
     private const string DevServerUrl = "http://localhost:5199";
 
@@ -61,6 +66,11 @@ public partial class MainWindow : Window
         // Wire the JS↔C# bridge before navigating so the page can call into Core immediately.
         _bridge = new AppShelfBridge(WebView, _service);
 
+        // If the hotkey delegates were already supplied (App.xaml.cs runs before WebView2 init
+        // completes), hand them to the freshly-constructed bridge now.
+        if (_tryRegisterHotkey is not null && _getActiveHotkey is not null)
+            _bridge.SetHotkeyDelegates(_tryRegisterHotkey, _getActiveHotkey);
+
 #if DEBUG
         WebView.CoreWebView2.Navigate(DevServerUrl);
 #else
@@ -94,8 +104,11 @@ public partial class MainWindow : Window
         base.OnClosing(e);
     }
 
-    /// <summary>Bring the window back from the tray. The web UI polls its own status, so a reload
-    /// is enough to refresh immediately.</summary>
+    /// <summary>Bring the window back from the tray. Deliberately does NOT reload the WebView2:
+    /// the web UI polls its own status (~2s) so a reload buys nothing, and a reload remounts the
+    /// React app — resetting tab/search/dialog state. That remount also clobbered the C#→JS
+    /// navigation push (tray "Ports"/"Add"/"Hotkey" flashed the target view then snapped back to
+    /// Apps), since ShowFromTray() runs immediately before PostNavigation().</summary>
     public void ShowFromTray()
     {
         Show();
@@ -103,6 +116,39 @@ public partial class MainWindow : Window
         Activate();
         Topmost = true;
         Topmost = false;
-        WebView.CoreWebView2?.Reload();
+    }
+
+    /// <summary>Push a C#→JS navigation message to the web UI (no request id). The tray menu uses
+    /// this to drive the React app (open Ports tab, add-app dialog, hotkey settings). Marshalled
+    /// to the UI thread; a no-op if the WebView2 has not yet initialised.</summary>
+    public void PostNavigation(string view)
+    {
+        void Post()
+        {
+            if (WebView.CoreWebView2 is null)
+                return;
+
+            var payload = System.Text.Json.JsonSerializer.Serialize(
+                new { type = "navigate", view },
+                new System.Text.Json.JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+                });
+            WebView.CoreWebView2.PostWebMessageAsJson(payload);
+        }
+
+        if (Dispatcher.CheckAccess())
+            Post();
+        else
+            Dispatcher.BeginInvoke(Post);
+    }
+
+    /// <summary>Inject the hotkey live-register + active-hotkey-read delegates from App.xaml.cs.
+    /// Stored on the window (the bridge may not yet exist) and forwarded to the bridge if it does.</summary>
+    public void SetHotkeyDelegate(Func<string?, bool> tryRegister, Func<string?> getActive)
+    {
+        _tryRegisterHotkey = tryRegister;
+        _getActiveHotkey = getActive;
+        _bridge?.SetHotkeyDelegates(tryRegister, getActive);
     }
 }

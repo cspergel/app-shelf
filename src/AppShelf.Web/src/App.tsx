@@ -1,10 +1,11 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Search, Plus, RefreshCw, Layers, LayoutGrid, Activity } from "lucide-react";
 import { useBridge } from "@/lib/use-bridge";
 import { CardGridDnd, type CardEntry, type StandaloneView } from "@/components/card-grid-dnd";
 import { PortDoctor } from "@/components/port-doctor";
 import { Toast, type ToastState } from "@/components/toast";
 import { AppDialog } from "@/components/app-dialog";
+import { HotkeySettings } from "@/components/hotkey-settings";
 import { ConfirmDialog, type ConfirmRequest } from "@/components/confirm-dialog";
 import { removeApp } from "@/lib/app-actions";
 import { cn } from "@/lib/utils";
@@ -66,6 +67,9 @@ export default function App() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<AppView | null>(null);
 
+  // Hotkey settings panel (opened from the tray "Hotkey…" menu via C#→JS navigation push).
+  const [hotkeyOpen, setHotkeyOpen] = useState(false);
+
   // Remove confirmation: the pending request + the target app.
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null);
   const [pendingRemove, setPendingRemove] = useState<AppView | null>(null);
@@ -84,6 +88,40 @@ export default function App() {
     setEditing(app);
     setDialogOpen(true);
   }, []);
+
+  // C#→JS navigation push: the tray menu drives the web UI by posting
+  // { type: "navigate", view: "..." } (no requestId). The bridge's request/response messages
+  // carry a requestId and are handled by use-bridge; we skip those here to avoid double-handling.
+  // window.chrome.webview is undefined in plain-browser/mock mode — guarded below.
+  useEffect(() => {
+    const handler = (event: { data: unknown }) => {
+      let data: unknown;
+      try {
+        data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+      } catch {
+        return;
+      }
+      const msg = data as { requestId?: string; type?: string; view?: string };
+      if (msg?.requestId) return; // bridge response — not for us
+      if (msg?.type === "navigate") {
+        if (msg.view === "ports") setTab("ports");
+        else if (msg.view === "add-app") openAdd();
+        else if (msg.view === "hotkey-settings") setHotkeyOpen(true);
+      }
+    };
+    const webview = (
+      window as unknown as {
+        chrome?: {
+          webview?: {
+            addEventListener?: (t: "message", l: (e: { data: unknown }) => void) => void;
+            removeEventListener?: (t: "message", l: (e: { data: unknown }) => void) => void;
+          };
+        };
+      }
+    ).chrome?.webview;
+    webview?.addEventListener?.("message", handler);
+    return () => webview?.removeEventListener?.("message", handler);
+  }, [openAdd]);
 
   const onSaved = useCallback(
     (message: string) => {
@@ -289,6 +327,13 @@ export default function App() {
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
         onSaved={onSaved}
+      />
+
+      {/* Spotlight hotkey settings (opened from tray "Hotkey…") */}
+      <HotkeySettings
+        open={hotkeyOpen}
+        onClose={() => setHotkeyOpen(false)}
+        onToast={onToast}
       />
 
       {/* Remove confirmation */}
